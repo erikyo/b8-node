@@ -1,0 +1,29 @@
+{
+	"compilerOptions": {
+		"target": "ES2021",
+		"lib": [ "ES2021" ],
+		"moduleResolution": "Node",
+		"noImplicitAny": true,
+		"removeComments": true,
+		"preserveConstEnums": true,
+		"sourceMap": true,
+		"strict": true,
+		"declaration": true,
+		"downlevelIteration": true,
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"experimentalDecorators": true,
+		"rootDir": "src",
+		// Minify
+		"pretty": false,
+		// types
+		"typeRoots": [
+			"src/types.d.ts",
+			"node_modules/@types",
+			"@types"
+		]
+	},
+	"include": [
+		"./src/**/*"
+	]
+}
