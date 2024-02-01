@@ -1,9 +1,14 @@
 import sqlite3, { Database } from 'sqlite3'
 
-import { KEY_COUNT_HAM, KEY_COUNT_SPAM } from './const'
+import {
+	KEY_COUNT_HAM,
+	KEY_COUNT_SPAM,
+	createTableQuery,
+	defaultPath,
+	insertTextsQuery,
+	insertVersionQuery,
+} from './const'
 import { B8CONFIG, DATABASE_INTERNAL } from './types'
-
-const defaultPath = './b8.db'
 
 export class SQLiteStorage {
 	private db: Database
@@ -37,64 +42,23 @@ export class SQLiteStorage {
 	}
 
 	createTables() {
-		// Create tables if they don't exist
-		// @ts-ignore
-		this.db.run(`CREATE TABLE IF NOT EXISTS internals (
-        id INTEGER PRIMARY KEY,
-        totalLearned INTEGER DEFAULT 0,
-        totalUnlearned INTEGER DEFAULT 0,
-        hamCount INTEGER DEFAULT 0,
-        spamCount INTEGER DEFAULT 0
-      )
-    `)
-
-		// @ts-ignore
-		this.db.run(`CREATE TABLE IF NOT EXISTS categories (
-        id INTEGER PRIMARY KEY,
-        name TEXT UNIQUE NOT NULL
-      )
-    `)
-
-		this.db.run(`CREATE TABLE IF NOT EXISTS tokens (
-        id INTEGER PRIMARY KEY,
-        token TEXT NOT NULL,
-        category_id INTEGER NOT NULL,
-        count INTEGER DEFAULT 0,
-        FOREIGN KEY (category_id) REFERENCES categories(id)
-      )
-
-      const createTableQuery = \`
-        CREATE TABLE IF NOT EXISTS b8_wordlist (
-            token varchar(190) NOT NULL,
-            count_ham int unsigned,
-            count_spam int unsigned,
-            PRIMARY KEY (token)
-        )\`;
-
 		this.db.run(createTableQuery, (err) => {
 			if (err) {
-				console.error(err);
+				console.error(err)
 			}
-		});
-
-		const insertVersionQuery = \`
-			INSERT INTO b8_wordlist (token, count_ham) VALUES ('b8*dbversion', '3')\`;
+		})
 
 		this.db.run(insertVersionQuery, (err) => {
 			if (err) {
-				console.error(err);
+				console.error(err)
 			}
-		});
-
-		const insertTextsQuery = \`
-			INSERT INTO b8_wordlist (token, count_ham, count_spam) VALUES ('b8*texts', '0', '0')\`;
+		})
 
 		this.db.run(insertTextsQuery, (err) => {
 			if (err) {
-				console.error(err);
+				console.error(err)
 			}
-		});
-    `)
+		})
 	}
 
 	/**
@@ -191,7 +155,9 @@ export class SQLiteStorage {
 	}
 
 	learn(tokens: { [x: string]: string }, category: string) {
-		const insertTokenQuery = `INSERT INTO tokens (token, category_id, count) VALUES (?, (SELECT id FROM categories WHERE name = ?), 1) ON CONFLICT(token, category_id) DO UPDATE SET count = count + 1`
+		const insertTokenQuery = `INSERT INTO tokens (token, category_id, count)
+VALUES (?, (SELECT id FROM categories WHERE name = ?), 1)
+ON CONFLICT(token, category_id) DO UPDATE SET count = count + 1`
 
 		Object.entries(tokens).forEach(([token]: string[]) => {
 			this.db.run(insertTokenQuery, [token, category], (err) => {
@@ -204,9 +170,9 @@ export class SQLiteStorage {
 
 	unlearn(tokens: { [x: string]: string }, category: string) {
 		const updateTokenQuery = `
-      UPDATE tokens
-      SET count = count - 1
-      WHERE token = ? AND category_id = (SELECT id FROM categories WHERE name = ?) AND count > 0`
+			UPDATE tokens
+		SET count = count - 1
+		WHERE token = ? AND category_id = (SELECT id FROM categories WHERE name = ?) AND count > 0`
 
 		Object.entries(tokens).forEach((token) => {
 			this.db.run(updateTokenQuery, [token, category], (err) => {
