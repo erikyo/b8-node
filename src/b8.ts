@@ -11,6 +11,7 @@ import {
 	UNLEARN,
 } from './const'
 import { B8CONFIG, DATABASE_INTERNAL } from './types'
+import { convert } from 'html-to-text'
 
 export class B8 {
 	config = {
@@ -26,7 +27,6 @@ export class B8 {
 	private degenerator: Degenerator
 	private lexer: Lexer
 	private storage: SQLiteStorage
-	private DBVERSION = 3
 
 	constructor(config: B8CONFIG = {}) {
 		// Validate config data
@@ -181,6 +181,8 @@ export class B8 {
 	}
 
 	async processText(text: string, category: string, action: string) {
+		text = convert(text)
+
 		// Retrieve the storage
 		const storage = this.storage
 

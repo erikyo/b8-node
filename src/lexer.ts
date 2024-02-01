@@ -1,6 +1,5 @@
 const LEXER_TEXT_NOT_STRING = 'LEXER_TEXT_NOT_STRING'
 const LEXER_TEXT_EMPTY = 'LEXER_TEXT_EMPTY'
-const LEXER_NO_TOKENS = 'b8*no_tokens'
 
 export class Lexer {
 	tokens: string[] | null

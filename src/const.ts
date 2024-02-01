@@ -1,3 +1,4 @@
+export const DB_VERSION = 3
 export const CLASSIFIER_TEXT_MISSING = 'CLASSIFIER_TEXT_MISSING'
 export const TRAINER_TEXT_MISSING = 'TRAINER_TEXT_MISSING'
 export const TRAINER_CATEGORY_MISSING = 'TRAINER_CATEGORY_MISSING'
@@ -19,7 +20,6 @@ export const createTableQuery = `CREATE TABLE \`b8_wordlist\` (
 		count_neg int unsigned,
 		PRIMARY KEY (token)
 	)`
-export const insertVersionQuery =
-	"INSERT INTO dataset (token, count_ham) VALUES ('b8*dbversion', '3')"
+export const insertVersionQuery = `INSERT INTO dataset (token, count_ham) VALUES ('b8*dbversion', ${DB_VERSION} )`
 export const insertTextsQuery =
 	"INSERT INTO dataset (token, count_ham, count_spam) VALUES ('b8*texts', '0', '0', 'test')"
