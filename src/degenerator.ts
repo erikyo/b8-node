@@ -11,13 +11,9 @@ export class Degenerator {
 	}
 
 	degenerate(words: string[]) {
-		const degenerates = {}
-
-		for (const word in words) {
+		for (const word of words) {
 			this.degenerates[word] = this.degenerateWord(word)
 		}
-
-		return degenerates
 	}
 
 	/**
