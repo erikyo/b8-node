@@ -15,12 +15,6 @@ export class Lexer {
 
 	constructor(config = {}) {
 		this.config = {
-			min_size: 3,
-			max_size: 30,
-			get_uris: true,
-			get_html: true,
-			get_bbcode: false,
-			allow_numbers: false,
 			...config,
 		}
 

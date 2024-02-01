@@ -15,18 +15,19 @@ export class SQLiteStorage {
 
 	constructor(config: B8CONFIG = {}) {
 		if (!config.dbPath) {
-			this.createDatabase(defaultPath)
+			this.db = this.createDatabase(defaultPath)
+			// Ensure tables are created
+			this.createTables()
+			// Set default path for later use
 			config.dbPath = defaultPath
+		} else {
+			// open	SQLite database
+			this.db = new sqlite3.Database(config.dbPath as string, (err) => {
+				if (err) {
+					throw new Error('Error initializing database: ' + err)
+				}
+			})
 		}
-		// Initialize SQLite database
-		this.db = new sqlite3.Database(config.dbPath as string, (err) => {
-			if (err) {
-				throw new Error('Error initializing database: ' + err)
-			}
-		})
-
-		// Ensure tables are created
-		this.createTables()
 	}
 
 	createDatabase(filename: string) {

@@ -5,8 +5,6 @@ export class Degenerator {
 	constructor(config = {}) {
 		// Validate config data
 		this.config = {
-			multibyte: true,
-			encoding: 'UTF-8',
 			...config,
 		}
 		this.degenerates = {}

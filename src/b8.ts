@@ -14,16 +14,28 @@ import { B8CONFIG, DATABASE_INTERNAL } from './types'
 import { convert } from 'html-to-text'
 
 export class B8 {
-	config = {
+	config: B8CONFIG = {
 		min_dev: 0.01,
 		rob_s: 0.5,
 		rob_x: 0.5,
 		use_relevant: 0.95,
-		lexer: {},
-		degenerator: {},
-		storage: {},
-		dbPath: ':memory:',
+		lexer: {
+			min_size: 3,
+			max_size: 30,
+			get_uris: true,
+			get_html: true,
+			get_bbcode: false,
+			allow_numbers: false,
+		},
+		degenerator: {
+			multibyte: true,
+			encoding: 'UTF-8',
+		},
+		storage: {
+			dbPath: ':memory:',
+		},
 	}
+
 	private degenerator: Degenerator
 	private lexer: Lexer
 	private storage: SQLiteStorage
@@ -45,10 +57,10 @@ export class B8 {
 				case 'lexer':
 				case 'degenerator':
 				case 'storage':
-					this.config[name] = config[name] || {}
+					this.config[name] = config[name]
 					break
 				case 'dbPath':
-					this.config[name] = config[name] || ':memory:'
+					this.config[name] = config[name]
 					break
 				default:
 					throw new Error(`Unknown configuration key: "${name}"`)
@@ -56,13 +68,13 @@ export class B8 {
 		})
 
 		// The degenerator class
-		this.degenerator = new Degenerator(config)
+		this.degenerator = new Degenerator(this.config.degenerator)
 
 		// The lexer class
-		this.lexer = new Lexer(config)
+		this.lexer = new Lexer(this.config.lexer)
 
 		// The storage backend with SQLite
-		this.storage = new SQLiteStorage(config)
+		this.storage = new SQLiteStorage(this.config.storage)
 	}
 
 	async classify(text: string) {
