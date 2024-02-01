@@ -1,12 +1,12 @@
+import { B8CONFIG } from './types'
+
 export class Degenerator {
-	private config: { multibyte: boolean; encoding: string }
+	private config: B8CONFIG['degenerator']
 	degenerates: Record<string, string[]>
 
 	constructor(config = {}) {
 		// Validate config data
-		this.config = {
-			...config,
-		}
+		this.config = config
 		this.degenerates = {}
 	}
 
@@ -46,7 +46,7 @@ export class Degenerator {
 
 		let lower, upper, first
 
-		if (!this.config.multibyte) {
+		if (!this.config?.multibyte) {
 			lower = word.toLowerCase()
 			upper = word.toUpperCase()
 			first = upper.charAt(0) + lower.slice(1)

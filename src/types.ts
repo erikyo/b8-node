@@ -1,6 +1,3 @@
-import { Lexer } from './lexer'
-import { Degenerator } from './degenerator'
-import { SQLiteStorage } from './SQLiteStorage'
 import { Database } from 'sqlite3'
 
 export type B8CONFIG = {
@@ -27,8 +24,8 @@ export type B8CONFIG = {
 }
 
 export interface DATABASE_INTERNAL extends Database {
-	spamCount: number
-	hamCount: number
+	negativeCount: number
+	positiveCount: number
 	totalLearned: number
 	totalUnlearned: number
 }

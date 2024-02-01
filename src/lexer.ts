@@ -1,22 +1,15 @@
+import { convert } from 'html-to-text'
+
 const LEXER_TEXT_NOT_STRING = 'LEXER_TEXT_NOT_STRING'
 const LEXER_TEXT_EMPTY = 'LEXER_TEXT_EMPTY'
 
 export class Lexer {
 	tokens: string[] | null
-	private config: {
-		get_uris: boolean
-		get_bbcode: boolean
-		get_html: boolean
-		allow_numbers: boolean
-		min_size: number
-		max_size: number
-	}
+	private config: {}
 	private processedText: string | null
 
 	constructor(config = {}) {
-		this.config = {
-			...config,
-		}
+		this.config = config
 
 		this.tokens = null
 		this.processedText = null
@@ -32,6 +25,9 @@ export class Lexer {
 		if (typeof text !== 'string') {
 			throw new Error(LEXER_TEXT_NOT_STRING)
 		}
+
+		// Convert HTML to plain text
+		text = convert(text)
 
 		if (text.trim() === '') {
 			throw new Error(LEXER_TEXT_EMPTY)

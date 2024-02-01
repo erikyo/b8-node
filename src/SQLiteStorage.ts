@@ -1,13 +1,6 @@
 import sqlite3, { Database } from 'sqlite3'
 
-import {
-	KEY_COUNT_HAM,
-	KEY_COUNT_SPAM,
-	createTableQuery,
-	defaultPath,
-	insertTextsQuery,
-	insertVersionQuery,
-} from './const'
+import { KEY_COUNT_POS, KEY_COUNT_NEG, INIT_QUERIES, defaultPath } from './const'
 import { B8CONFIG, DATABASE_INTERNAL } from './types'
 
 export class SQLiteStorage {
@@ -43,19 +36,19 @@ export class SQLiteStorage {
 	}
 
 	createTables() {
-		this.db.run(createTableQuery, (err) => {
+		this.db.run(INIT_QUERIES.createTableQuery, (err) => {
 			if (err) {
 				console.error(err)
 			}
 		})
 
-		this.db.run(insertVersionQuery, (err) => {
+		this.db.run(INIT_QUERIES.insertVersionQuery, (err) => {
 			if (err) {
 				console.error(err)
 			}
 		})
 
-		this.db.run(insertTextsQuery, (err) => {
+		this.db.run(INIT_QUERIES.insertTextsQuery, (err) => {
 			if (err) {
 				console.error(err)
 			}
@@ -120,29 +113,21 @@ export class SQLiteStorage {
 	addToken(token: string[], count: { [x: string]: string } = {}) {
 		const query = 'INSERT INTO tokens (token, count_ham, count_spam) VALUES (?, ?, ?)'
 
-		this.db.run(
-			query,
-			[token, count[KEY_COUNT_HAM], count[KEY_COUNT_SPAM]],
-			(err) => {
-				if (err) {
-					console.error(err)
-				}
+		this.db.run(query, [token, count[KEY_COUNT_POS], count[KEY_COUNT_NEG]], (err) => {
+			if (err) {
+				console.error(err)
 			}
-		)
+		})
 	}
 
 	updateToken(token: string[], count: { [x: string]: string }) {
 		const query = 'UPDATE tokens SET count_ham = ?, count_spam = ? WHERE token = ?'
 
-		this.db.run(
-			query,
-			[count[KEY_COUNT_HAM], count[KEY_COUNT_SPAM], token],
-			(err) => {
-				if (err) {
-					console.error(err)
-				}
+		this.db.run(query, [count[KEY_COUNT_POS], count[KEY_COUNT_NEG], token], (err) => {
+			if (err) {
+				console.error(err)
 			}
-		)
+		})
 	}
 
 	deleteToken(token: string[]) {

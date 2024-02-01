@@ -3,15 +3,14 @@ import { Lexer } from './lexer'
 import { SQLiteStorage } from './SQLiteStorage'
 import {
 	CLASSIFIER_TEXT_MISSING,
-	HAM,
+	PROBABLE,
 	LEARN,
-	SPAM,
+	IMPROBABLE,
 	TRAINER_CATEGORY_MISSING,
 	TRAINER_TEXT_MISSING,
 	UNLEARN,
 } from './const'
 import { B8CONFIG, DATABASE_INTERNAL } from './types'
-import { convert } from 'html-to-text'
 
 export class B8 {
 	config: B8CONFIG = {
@@ -99,8 +98,8 @@ export class B8 {
 				const tokenData =
 					degeneratedTokens[token as keyof typeof degeneratedTokens]
 
-				const spamCount = await this.storage.getTokenCount(tokenData, SPAM)
-				const hamCount = await this.storage.getTokenCount(tokenData, HAM)
+				const spamCount = await this.storage.getTokenCount(tokenData, IMPROBABLE)
+				const hamCount = await this.storage.getTokenCount(tokenData, PROBABLE)
 
 				tokenSpamValues[token] = this.calculateTokenSpaminess(
 					spamCount,
@@ -127,11 +126,13 @@ export class B8 {
 		hamCount: number,
 		internals: DATABASE_INTERNAL
 	) {
-		//const totalTokens = spamCount + hamCount
-		const totalCategories = internals.spamCount + internals.hamCount
+		//const totalTokens = negativeCount + positiveCount
+		const totalCategories = internals.negativeCount + internals.positiveCount
 
-		const spamProbability = (spamCount + 1) / (internals.spamCount + totalCategories)
-		const hamProbability = (hamCount + 1) / (internals.hamCount + totalCategories)
+		const spamProbability =
+			(spamCount + 1) / (internals.negativeCount + totalCategories)
+		const hamProbability =
+			(hamCount + 1) / (internals.positiveCount + totalCategories)
 
 		return spamProbability / (spamProbability + hamProbability)
 	}
@@ -158,9 +159,9 @@ export class B8 {
 
 		// Apply Bayesian probability
 		const priorSpamProbability =
-			internals.spamCount / (internals.spamCount + internals.hamCount)
+			internals.negativeCount / (internals.negativeCount + internals.positiveCount)
 		const priorHamProbability =
-			internals.hamCount / (internals.spamCount + internals.hamCount)
+			internals.positiveCount / (internals.negativeCount + internals.positiveCount)
 
 		textSpaminess *= priorSpamProbability
 		textSpaminess /= textSpaminess + priorHamProbability
@@ -193,8 +194,6 @@ export class B8 {
 	}
 
 	async processText(text: string, category: string, action: string) {
-		text = convert(text)
-
 		// Retrieve the storage
 		const storage = this.storage
 
@@ -228,19 +227,16 @@ export class B8 {
 		}
 
 		// Update the category counters
-		if (currentCategory === HAM) {
-			internals.hamCount += action === LEARN ? 1 : -1
-		} else if (currentCategory === SPAM) {
-			internals.spamCount += action === LEARN ? 1 : -1
+		if (currentCategory === PROBABLE) {
+			internals.positiveCount += action === LEARN ? 1 : -1
+		} else if (currentCategory === IMPROBABLE) {
+			internals.negativeCount += action === LEARN ? 1 : -1
 		}
-
-		// Persist the changes
-		// storage.save();
 
 		return true
 	}
 
 	checkCategory(category: string) {
-		return category === HAM || category === SPAM
+		return category === PROBABLE || category === IMPROBABLE
 	}
 }
