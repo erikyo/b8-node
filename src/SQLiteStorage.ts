@@ -5,11 +5,16 @@ import { B8CONFIG, ROW } from './types'
 
 export class SQLiteStorage {
 	private db: sqlite3.Database
+	private config: B8CONFIG
 
 	constructor(config: B8CONFIG = {}) {
+		// store the config
+		this.config = config
+
+		// open	SQLite database
 		if (!config.dbPath) {
 			this.db = this.createDatabase(defaultPath)
-			// Set default path for later use
+			// Set the default path for later use
 			config.dbPath = defaultPath
 		} else {
 			// open	SQLite database
@@ -19,8 +24,25 @@ export class SQLiteStorage {
 				}
 			})
 		}
+
 		// Ensure tables are created
-		this.createTable()
+		if (!this.tableExists('b8_dataset')) {
+			this.createTable()
+		}
+	}
+
+	tableExists(tableName: string): boolean {
+		this.db.get(
+			'SELECT name FROM sqlite_master WHERE type = "table" AND name = ?',
+			[tableName],
+			(err, row) => {
+				if (err) {
+					console.error(err)
+				}
+				return !!row
+			}
+		)
+		return false
 	}
 
 	createDatabase(filename: string) {
@@ -58,7 +80,7 @@ export class SQLiteStorage {
 	getVersion(): number {
 		let version = 0
 		this.db.get(
-			'SELECT positiveCount FROM dataset where token = ?',
+			'SELECT pos FROM b8_dataset where token = ?',
 			'b8*dbversion',
 			(err, row: ROW) => {
 				if (err) {
@@ -81,7 +103,7 @@ export class SQLiteStorage {
 			negativeCount: 0,
 		}
 		this.db.get(
-			'SELECT * FROM dataset where token = ?',
+			'SELECT * FROM b8_dataset where token = ?',
 			'b8*texts',
 			(err, row: ROW) => {
 				if (err) {
@@ -105,7 +127,7 @@ export class SQLiteStorage {
 	 */
 	getCategory(context: string): string | null {
 		this.db.get(
-			'SELECT * FROM categories WHERE name = ? LIMIT 1',
+			'SELECT * FROM b8_dataset WHERE name = ? LIMIT 1',
 			[context],
 			(err, row) => {
 				if (!err) {
@@ -119,7 +141,7 @@ export class SQLiteStorage {
 
 	createCategory(context: string): Promise<string> {
 		return new Promise((resolve, reject) => {
-			this.db.run('INSERT INTO categories (name) VALUES (?)', [context], (err) => {
+			this.db.run('INSERT INTO b8_dataset (name) VALUES (?)', [context], (err) => {
 				if (err) {
 					reject(err)
 				} else {
@@ -136,7 +158,8 @@ export class SQLiteStorage {
 	 * @param {{[x: string]: any}} count - object containing count for ham and spam
 	 */
 	addToken(token: string[], count: { [x: string]: string } = {}) {
-		const query = 'INSERT INTO tokens (token, count_ham, count_spam) VALUES (?, ?, ?)'
+		const query =
+			'INSERT INTO b8_dataset (token, count_ham, count_spam) VALUES (?, ?, ?)'
 
 		this.db.run(
 			query,
@@ -150,7 +173,8 @@ export class SQLiteStorage {
 	}
 
 	updateToken(token: string[], count: { [x: string]: string }) {
-		const query = 'UPDATE tokens SET count_ham = ?, count_spam = ? WHERE token = ?'
+		const query =
+			'UPDATE b8_dataset SET count_ham = ?, count_spam = ? WHERE token = ?'
 
 		this.db.run(
 			query,
@@ -164,7 +188,7 @@ export class SQLiteStorage {
 	}
 
 	deleteToken(token: string[]) {
-		const query = 'DELETE FROM tokens WHERE token = ?'
+		const query = 'DELETE FROM b8_dataset WHERE token = ?'
 
 		this.db.run(query, [token], (err) => {
 			if (err) {
@@ -174,9 +198,9 @@ export class SQLiteStorage {
 	}
 
 	learn(tokens: Record<string, string[]>, context: string | null) {
-		const insertTokenQuery = `INSERT INTO tokens (token, category_id, count)
-VALUES (?, (SELECT id FROM categories WHERE name = ?), 1)
-ON CONFLICT(token, category_id) DO UPDATE SET count = count + 1`
+		const insertTokenQuery = `INSERT INTO b8_dataset (token, pos, neg)
+VALUES (?, (SELECT token FROM b8_dataset WHERE name = ?), 1)
+ON CONFLICT(token) DO UPDATE SET pos = pos + 1`
 
 		Object.entries(tokens).forEach((token) => {
 			this.db.run(insertTokenQuery, [token, context], (err) => {
@@ -189,9 +213,9 @@ ON CONFLICT(token, category_id) DO UPDATE SET count = count + 1`
 
 	unlearn(tokens: Record<string, string[]>, context: string | null) {
 		const updateTokenQuery = `
-			UPDATE tokens
+			UPDATE b8_dataset
 		SET count = count - 1
-		WHERE token = ? AND category_id = (SELECT id FROM categories WHERE name = ?) AND count > 0`
+		WHERE token = ? AND category_id = (SELECT id FROM b8_dataset WHERE name = ?) AND count > 0`
 
 		Object.entries(tokens).forEach((token) => {
 			this.db.run(updateTokenQuery, [token, context], (err) => {
@@ -205,8 +229,8 @@ ON CONFLICT(token, category_id) DO UPDATE SET count = count + 1`
 	getTokenCount(token: string[], context: string): Promise<number> {
 		return new Promise((resolve, reject) => {
 			this.db.get(
-				'SELECT count FROM tokens WHERE token = ? AND category_id = (SELECT id FROM categories WHERE name = ?) LIMIT 1',
-				[token, context],
+				'SELECT COUNT(token) FROM b8_dataset WHERE token = ? LIMIT 1',
+				[token],
 				(err, row) => {
 					if (err) {
 						reject(err)
