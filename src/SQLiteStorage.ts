@@ -1,16 +1,14 @@
-import sqlite3, { Database } from 'sqlite3'
+import * as sqlite3 from 'sqlite3'
 
-import { KEY_COUNT_POS, KEY_COUNT_NEG, INIT_QUERIES, defaultPath } from './const'
-import { B8CONFIG, DATABASE_INTERNAL } from './types'
+import { defaultPath, INIT_QUERIES } from './const'
+import { B8CONFIG, ROW } from './types'
 
 export class SQLiteStorage {
-	private db: Database
+	private db: sqlite3.Database
 
 	constructor(config: B8CONFIG = {}) {
 		if (!config.dbPath) {
 			this.db = this.createDatabase(defaultPath)
-			// Ensure tables are created
-			this.createTables()
 			// Set default path for later use
 			config.dbPath = defaultPath
 		} else {
@@ -21,6 +19,8 @@ export class SQLiteStorage {
 				}
 			})
 		}
+		// Ensure tables are created
+		this.createTable()
 	}
 
 	createDatabase(filename: string) {
@@ -35,53 +35,78 @@ export class SQLiteStorage {
 		)
 	}
 
-	createTables() {
-		this.db.run(INIT_QUERIES.createTableQuery, (err) => {
+	createTable() {
+		this.db.exec(INIT_QUERIES.createTableQuery, (err) => {
 			if (err) {
 				console.error(err)
 			}
 		})
 
-		this.db.run(INIT_QUERIES.insertVersionQuery, (err) => {
+		this.db.exec(INIT_QUERIES.insertVersionQuery, (err) => {
 			if (err) {
 				console.error(err)
 			}
 		})
 
-		this.db.run(INIT_QUERIES.insertTextsQuery, (err) => {
+		this.db.exec(INIT_QUERIES.insertTextsQuery, (err) => {
 			if (err) {
 				console.error(err)
 			}
 		})
+	}
+
+	getVersion(): number {
+		let version = 0
+		this.db.get(
+			'SELECT positiveCount FROM dataset where token = ?',
+			'b8*dbversion',
+			(err, row: ROW) => {
+				if (err) {
+					console.error(err)
+				}
+				version = row.pos
+			}
+		)
+		return version
 	}
 
 	/**
 	 * Retrieves the internals from the database.
 	 *
-	 * @return {string[]} A Promise that resolves to the retrieved internals.
+	 * @return {object} - An object containing the version and the retrieved internals
 	 */
-	getInternals(): Promise<DATABASE_INTERNAL> {
-		return new Promise((resolve, reject) => {
-			this.db.get('SELECT * FROM internals LIMIT 1', (err, row) => {
+	getInternals() {
+		let processedRaw = {
+			positiveCount: 0,
+			negativeCount: 0,
+		}
+		this.db.get(
+			'SELECT * FROM dataset where token = ?',
+			'b8*texts',
+			(err, row: ROW) => {
 				if (err) {
-					reject(err)
-				} else {
-					resolve(row as DATABASE_INTERNAL)
+					console.error(err)
 				}
-			})
-		})
+				processedRaw = {
+					positiveCount: row.pos,
+					negativeCount: row.neg,
+				}
+			}
+		)
+
+		return processedRaw
 	}
 
 	/**
-	 * Retrieves the category from the database. If the category does not exist, it is created.
+	 * Retrieves the context from the database. If the context does not exist, it is created.
 	 *
-	 * @param {string} category - The category to retrieve or create
-	 * @return {string[]} A Promise that resolves with the retrieved or created category
+	 * @param {string} context - The context to retrieve or create
+	 * @return {string[]} A Promise that resolves with the retrieved or created context
 	 */
-	getCategory(category: string): string | null {
+	getCategory(context: string): string | null {
 		this.db.get(
 			'SELECT * FROM categories WHERE name = ? LIMIT 1',
-			[category],
+			[context],
 			(err, row) => {
 				if (!err) {
 					return row
@@ -92,13 +117,13 @@ export class SQLiteStorage {
 		return null
 	}
 
-	createCategory(category: string): Promise<string> {
+	createCategory(context: string): Promise<string> {
 		return new Promise((resolve, reject) => {
-			this.db.run('INSERT INTO categories (name) VALUES (?)', [category], (err) => {
+			this.db.run('INSERT INTO categories (name) VALUES (?)', [context], (err) => {
 				if (err) {
 					reject(err)
 				} else {
-					resolve(category)
+					resolve(context)
 				}
 			})
 		})
@@ -113,21 +138,29 @@ export class SQLiteStorage {
 	addToken(token: string[], count: { [x: string]: string } = {}) {
 		const query = 'INSERT INTO tokens (token, count_ham, count_spam) VALUES (?, ?, ?)'
 
-		this.db.run(query, [token, count[KEY_COUNT_POS], count[KEY_COUNT_NEG]], (err) => {
-			if (err) {
-				console.error(err)
+		this.db.run(
+			query,
+			[token, count['count_probable'], count['count_improbable']],
+			(err) => {
+				if (err) {
+					console.error(err)
+				}
 			}
-		})
+		)
 	}
 
 	updateToken(token: string[], count: { [x: string]: string }) {
 		const query = 'UPDATE tokens SET count_ham = ?, count_spam = ? WHERE token = ?'
 
-		this.db.run(query, [count[KEY_COUNT_POS], count[KEY_COUNT_NEG], token], (err) => {
-			if (err) {
-				console.error(err)
+		this.db.run(
+			query,
+			[count['count_probable'], count['count_improbable'], token],
+			(err) => {
+				if (err) {
+					console.error(err)
+				}
 			}
-		})
+		)
 	}
 
 	deleteToken(token: string[]) {
@@ -140,13 +173,13 @@ export class SQLiteStorage {
 		})
 	}
 
-	learn(tokens: { [x: string]: string }, category: string) {
+	learn(tokens: Record<string, string[]>, context: string | null) {
 		const insertTokenQuery = `INSERT INTO tokens (token, category_id, count)
 VALUES (?, (SELECT id FROM categories WHERE name = ?), 1)
 ON CONFLICT(token, category_id) DO UPDATE SET count = count + 1`
 
-		Object.entries(tokens).forEach(([token]: string[]) => {
-			this.db.run(insertTokenQuery, [token, category], (err) => {
+		Object.entries(tokens).forEach((token) => {
+			this.db.run(insertTokenQuery, [token, context], (err) => {
 				if (err) {
 					console.error(err)
 				}
@@ -154,14 +187,14 @@ ON CONFLICT(token, category_id) DO UPDATE SET count = count + 1`
 		})
 	}
 
-	unlearn(tokens: { [x: string]: string }, category: string) {
+	unlearn(tokens: Record<string, string[]>, context: string | null) {
 		const updateTokenQuery = `
 			UPDATE tokens
 		SET count = count - 1
 		WHERE token = ? AND category_id = (SELECT id FROM categories WHERE name = ?) AND count > 0`
 
 		Object.entries(tokens).forEach((token) => {
-			this.db.run(updateTokenQuery, [token, category], (err) => {
+			this.db.run(updateTokenQuery, [token, context], (err) => {
 				if (err) {
 					console.error(err)
 				}
@@ -169,11 +202,11 @@ ON CONFLICT(token, category_id) DO UPDATE SET count = count + 1`
 		})
 	}
 
-	getTokenCount(token: string, category: string): Promise<number> {
+	getTokenCount(token: string[], context: string): Promise<number> {
 		return new Promise((resolve, reject) => {
 			this.db.get(
 				'SELECT count FROM tokens WHERE token = ? AND category_id = (SELECT id FROM categories WHERE name = ?) LIMIT 1',
-				[token, category],
+				[token, context],
 				(err, row) => {
 					if (err) {
 						reject(err)
