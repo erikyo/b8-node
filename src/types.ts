@@ -23,9 +23,14 @@ export type B8CONFIG = {
 	}
 }
 
-export interface DATABASE_INTERNAL extends Database {
+export interface DATASET {
 	negativeCount: number
 	positiveCount: number
 	totalLearned: number
 	totalUnlearned: number
+}
+
+export interface ROW extends Database {
+	pos: number
+	neg: number
 }
