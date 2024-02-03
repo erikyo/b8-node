@@ -6,68 +6,72 @@ import {
 	TRAINER_CATEGORY_MISSING,
 	TRAINER_TEXT_MISSING,
 } from './const'
-import { B8CONFIG } from './types'
+import { B8CONFIG, DATASET } from './types'
+
+const configDefaults: B8CONFIG = {
+	min_dev: 0.01,
+	rob_s: 0.5,
+	rob_x: 0.5,
+	use_relevant: 0.95,
+	lexer: {
+		min_size: 3,
+		max_size: 30,
+		get_uris: true,
+		get_html: true,
+		get_bbcode: false,
+		allow_numbers: false,
+	},
+	degenerator: {
+		multibyte: true,
+		encoding: 'UTF-8',
+	},
+	storage: {
+		dbPath: ':memory:',
+	},
+}
+
+function validateConfig(config: B8CONFIG) {
+	let validConfig: B8CONFIG = configDefaults
+	// Validate config data
+	Object.keys(config).forEach((name) => {
+		switch (name) {
+			case 'min_dev':
+				validConfig[name] = config[name] || 0.01
+				break
+			case 'rob_s':
+			case 'rob_x':
+				validConfig[name] = config[name] || 0.05
+				break
+			case 'use_relevant':
+				validConfig[name] = config[name] || 0.95
+				break
+			case 'lexer':
+			case 'degenerator':
+			case 'storage':
+				validConfig[name] = config[name]
+				break
+			case 'dbPath':
+				validConfig[name] = config[name]
+				break
+			default:
+				throw new Error(`Unknown configuration key: "${name}"`)
+		}
+	})
+	return validConfig
+}
 
 export class B8 {
-	config: B8CONFIG = {
-		min_dev: 0.01,
-		rob_s: 0.5,
-		rob_x: 0.5,
-		use_relevant: 0.95,
-		lexer: {
-			min_size: 3,
-			max_size: 30,
-			get_uris: true,
-			get_html: true,
-			get_bbcode: false,
-			allow_numbers: false,
-		},
-		degenerator: {
-			multibyte: true,
-			encoding: 'UTF-8',
-		},
-		storage: {
-			dbPath: ':memory:',
-		},
-	}
+	config: B8CONFIG
 
 	private degenerator: Degenerator
 	private lexer: Lexer
 	private storage: SQLiteStorage
 	private version: number
-	private internals: {
-		positiveCount: number
-		negativeCount: number
-		totalLearned: number
-		totalUnlearned: number
-	}
+	private context: string = ''
+	private internals: DATASET
 
 	constructor(config: B8CONFIG = {}) {
-		// Validate config data
-		Object.keys(config).forEach((name) => {
-			switch (name) {
-				case 'min_dev':
-					this.config[name] = config[name] || 0.01
-					break
-				case 'rob_s':
-				case 'rob_x':
-					this.config[name] = config[name] || 0.05
-					break
-				case 'use_relevant':
-					this.config[name] = config[name] || 0.95
-					break
-				case 'lexer':
-				case 'degenerator':
-				case 'storage':
-					this.config[name] = config[name]
-					break
-				case 'dbPath':
-					this.config[name] = config[name]
-					break
-				default:
-					throw new Error(`Unknown configuration key: "${name}"`)
-			}
-		})
+		this.config = validateConfig(config)
 
 		// The degenerator class
 		this.degenerator = new Degenerator(this.config.degenerator)
@@ -80,11 +84,9 @@ export class B8 {
 
 		// Get the internal database variables
 		this.version = this.storage.getVersion()
-		this.internals = {
-			totalLearned: 0,
-			totalUnlearned: 0,
-			...this.storage.getInternals(),
-		}
+
+		// Set up the internal database variables
+		this.internals = this.storage.getInternals(this.context) as DATASET
 	}
 
 	async classify(text: string) {
@@ -105,36 +107,32 @@ export class B8 {
 			if (token in this.degenerator.degenerates) {
 				const tokenData = this.degenerator.degenerates[token]
 
-				const spamCount = await this.storage.getTokenCount(
-					tokenData,
-					'improbable'
-				)
-				const hamCount = await this.storage.getTokenCount(tokenData, 'probable')
+				const [hamCount, spamCount] = this.storage.getToken(tokenData)
 
-				tokenSpamValues[token] = this.calculateTokenSpaminess(spamCount, hamCount)
+				tokenSpamValues[token] = this.calculateTokenAffinity(spamCount, hamCount)
 			}
 		}
 
 		// Calculate the spaminess of the text
-		return this.calculateTextSpaminess(tokenSpamValues)
+		return this.calculateTextAffinity(tokenSpamValues)
 	}
 
 	/**
 	 * Calculates the spamminess of a token based on spam and ham counts.
 	 *
-	 * @param {number} spamCount - the count of the token in spam messages
-	 * @param {number} hamCount - the count of the token in non-spam messages
+	 * @param {number} neg - the count of the token in spam messages
+	 * @param {number} pos - the count of the token in non-spam messages
 	 * @return {number} the spamminess of the token
 	 */
-	calculateTokenSpaminess(spamCount: number, hamCount: number) {
+	calculateTokenAffinity(neg: number, pos: number) {
 		//const totalTokens = negativeCount + positiveCount
 		const totalCategories =
 			this.internals.negativeCount + this.internals.positiveCount
 
 		const spamProbability =
-			(spamCount + 1) / (this.internals.negativeCount + totalCategories)
+			(neg + 1) / (this.internals.negativeCount + totalCategories)
 		const hamProbability =
-			(hamCount + 1) / (this.internals.positiveCount + totalCategories)
+			(pos + 1) / (this.internals.positiveCount + totalCategories)
 
 		return spamProbability / (spamProbability + hamProbability)
 	}
@@ -145,7 +143,7 @@ export class B8 {
 	 * @param {object} tokenSpamValues - An object containing token spam values.
 	 * @return {number} The spaminess of the text.
 	 */
-	calculateTextSpaminess(tokenSpamValues: Record<string, number>) {
+	calculateTextAffinity(tokenSpamValues: Record<string, number>) {
 		let textSpaminess = 1.0 // Initialize with neutral probability
 
 		for (const token in tokenSpamValues) {
@@ -169,38 +167,28 @@ export class B8 {
 		return textSpaminess
 	}
 
-	learn(text: null | string, context: 'probable' | 'improbable' | null) {
+	learn(text: null | string, type: 'probable' | 'improbable') {
 		// Let's first see if the user called the function correctly
 		if (text === null) {
 			return TRAINER_TEXT_MISSING
 		}
-		if (context === null || !this.checkCategory(context)) {
-			return TRAINER_CATEGORY_MISSING
-		}
 
-		return this.processText(text, context, 'learn')
+		return this.processText(text, type)
 	}
 
-	unlearn(text: null | string, context: 'probable' | 'improbable' | null) {
+	unlearn(text: null | string, type: 'probable' | 'improbable' | null) {
 		// Let's first see if the user called the function correctly
 		if (text === null) {
 			return TRAINER_TEXT_MISSING
 		}
-		if (context === null || !this.checkCategory(context)) {
+		if (type === null || !this.checkType(type)) {
 			return TRAINER_CATEGORY_MISSING
 		}
 
-		return this.processText(text, context, 'unlearn')
+		return this.processText(text, type)
 	}
 
-	async processText(
-		text: string,
-		context: 'probable' | 'improbable' | null,
-		action: 'learn' | 'unlearn' = 'learn'
-	) {
-		// Retrieve the storage
-		const storage = this.storage
-
+	async processText(text: string, context: string | undefined = undefined) {
 		// Tokenize the text
 		const tokens = this.lexer.getTokens(text)
 
@@ -208,33 +196,47 @@ export class B8 {
 		this.degenerator.degenerate(tokens)
 
 		// Retrieve or create the current context in the storage
-		/*		let currentCategory = storage.getCategory(context)
-		if (!currentCategory) {
-			currentCategory = await storage.createCategory(context)
-		}*/
+		if (context !== this.context) {
+			this.updateContext(context)
+		}
+	}
 
-		for (const token in tokens) {
+	async evaluate(
+		type: 'probable' | 'improbable' | null,
+		action: 'learn' | 'unlearn' = 'learn'
+	) {
+		let positiveCount = 0,
+			negativeCount = 0
+		for (const tokens in this.degenerator.degenerates) {
 			// Increase or decrease the right counter
 			if (action === 'learn') {
-				if (context === 'probable') {
-					this.internals.positiveCount += token.length
-				} else if (context === 'improbable') {
-					this.internals.negativeCount += token.length
+				if (type === 'probable') {
+					positiveCount += tokens.length
+				} else if (type === 'improbable') {
+					negativeCount += tokens.length
 				}
 			} else if (action == 'unlearn') {
-				if (context === 'probable') {
-					this.internals.positiveCount -= token.length
-				} else if (context === 'improbable') {
-					this.internals.negativeCount -= token.length
+				if (type === 'probable') {
+					positiveCount -= tokens.length
+				} else if (type === 'improbable') {
+					negativeCount -= tokens.length
 				}
 			}
 		}
 
 		// Update the token database based on the action (learn or unlearn)
 		if (action === 'learn') {
-			storage.learn(this.degenerator.degenerates, context)
+			this.storage.addTokens(
+				this.degenerator.flattenDegenerates(this.degenerator.degenerates),
+				{
+					count_probable: positiveCount,
+					count_improbable: negativeCount,
+				}
+			)
 		} else if (action === 'unlearn') {
-			storage.unlearn(this.degenerator.degenerates, context)
+			this.storage.deleteToken(
+				this.degenerator.flattenDegenerates(this.degenerator.degenerates)
+			)
 		}
 
 		// Update the internals
@@ -245,16 +247,23 @@ export class B8 {
 		}
 
 		// Update the context counters
-		if (context === 'probable') {
+		if (type === 'probable') {
 			this.internals.positiveCount += action === 'learn' ? 1 : -1
-		} else if (context === 'improbable') {
+		} else if (type === 'improbable') {
 			this.internals.negativeCount += action === 'learn' ? 1 : -1
 		}
 
 		return true
 	}
 
-	checkCategory(context: string) {
-		return context === 'probable' || context === 'improbable'
+	checkType(type: string) {
+		return type === 'probable' || type === 'improbable'
+	}
+
+	private updateContext(context?: string) {
+		if (context && !this.storage.tableExists(context)) {
+			this.storage.createTable(context)
+		}
+		this.internals = this.storage.getInternals(context)
 	}
 }

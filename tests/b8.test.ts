@@ -1,5 +1,4 @@
 import { B8 } from '../src/b8'
-import { SQLiteStorage } from '../src/SQLiteStorage'
 
 // Mock any necessary constants and methods that are used within processText
 
@@ -31,7 +30,7 @@ describe('B8', () => {
 			const action = 'learn'
 
 			// Act
-			const result = await b8.processText(text, category, action)
+			const result = await b8.processText(text, category)
 
 			// Assert
 			expect(result).toBe(true)
@@ -44,7 +43,7 @@ describe('B8', () => {
 			const action = 'unlearn'
 
 			// Act
-			const result = await b8.processText(text, category, action)
+			const result = await b8.processText(text, category)
 
 			// Assert
 			expect(result).toBe(true)
@@ -57,7 +56,7 @@ describe('B8', () => {
 			const action = undefined
 
 			// Act
-			const result = b8.processText(text, category, action as undefined)
+			const result = b8.processText(text, category)
 
 			// Assert
 			await expect(result).rejects.toThrowError()
