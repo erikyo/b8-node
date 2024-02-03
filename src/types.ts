@@ -24,8 +24,8 @@ export type B8CONFIG = {
 }
 
 export interface DATASET {
-	negativeCount: number
 	positiveCount: number
+	negativeCount: number
 	totalLearned: number
 	totalUnlearned: number
 }
@@ -33,4 +33,8 @@ export interface DATASET {
 export interface ROW extends Database {
 	pos: number
 	neg: number
+}
+
+export type ROWS = {
+	[x: string]: ROW
 }

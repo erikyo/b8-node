@@ -16,6 +16,14 @@ export class Degenerator {
 		}
 	}
 
+	flattenDegenerates(record: Record<string, string[]>): string[] {
+		let result: string[] = []
+		Object.keys(record).forEach((key) => {
+			result = result.concat(record[key])
+		})
+		return result
+	}
+
 	/**
 	 * Deletes duplicates of a word from a list.
 	 *
@@ -59,19 +67,22 @@ export class Degenerator {
 
 		degenerate.push(word)
 
+		// Add alternative words
 		degenerate.forEach((altWord) => {
 			if (altWord.match(/[!?]$/)) {
+				// Look for stuff like !!! and ???
 				if (altWord.match(/[!?]{2,}$/)) {
 					const tmp = altWord.replace(/([!?])$/, '$1')
 					degenerate.push(tmp)
 				}
 
+				// Add versions with different !s and ?s
 				const tmp = altWord.replace(/([!?])$/, '')
 				degenerate.push(tmp)
 			}
 
+			// Look for "..." at the end of the word
 			let altWordInt = altWord
-
 			while (altWordInt.match(/[.]$/)) {
 				altWordInt = altWordInt.slice(0, -1)
 				degenerate.push(altWordInt)
