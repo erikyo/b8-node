@@ -26,8 +26,7 @@ describe('B8', () => {
 		it('should process text for learning correctly', async () => {
 			// Arrange
 			const text = 'Hello, world!'
-			const category = 'probable' // Replace with appropriate category
-			const action = 'learn'
+			const category = 'probable'
 
 			// Act
 			const result = await b8.processText(text, category)
@@ -40,7 +39,6 @@ describe('B8', () => {
 			// Arrange
 			const text = 'Hello, world!'
 			const category = 'probable'
-			const action = 'unlearn'
 
 			// Act
 			const result = await b8.processText(text, category)
@@ -53,7 +51,6 @@ describe('B8', () => {
 			// Arrange
 			const text = ''
 			const category = 'improbable'
-			const action = undefined
 
 			// Act
 			const result = b8.processText(text, category)

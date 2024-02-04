@@ -1,57 +1,30 @@
 import { Degenerator } from './degenerator'
 import { Lexer } from './lexer'
 import { SQLiteStorage } from './SQLiteStorage'
-import {
-	CLASSIFIER_TEXT_MISSING,
-	TRAINER_CATEGORY_MISSING,
-	TRAINER_TEXT_MISSING,
-} from './const'
-import { B8CONFIG, DATASET } from './types'
-
-const configDefaults: B8CONFIG = {
-	min_dev: 0.01,
-	rob_s: 0.5,
-	rob_x: 0.5,
-	use_relevant: 0.95,
-	lexer: {
-		min_size: 3,
-		max_size: 30,
-		get_uris: true,
-		get_html: true,
-		get_bbcode: false,
-		allow_numbers: false,
-	},
-	degenerator: {
-		multibyte: true,
-		encoding: 'UTF-8',
-	},
-	storage: {
-		dbPath: ':memory:',
-	},
-}
+import { configDefaults, INTERNALS } from './const'
+import { B8CONFIG, DATASET, TOKEN, TOKENS } from './types'
 
 function validateConfig(config: B8CONFIG) {
-	let validConfig: B8CONFIG = configDefaults
+	const validConfig: B8CONFIG = configDefaults
 	// Validate config data
 	Object.keys(config).forEach((name) => {
 		switch (name) {
 			case 'min_dev':
-				validConfig[name] = config[name] || 0.01
+				validConfig[name] = config[name]
 				break
 			case 'rob_s':
 			case 'rob_x':
-				validConfig[name] = config[name] || 0.05
+				validConfig[name] = config[name]
 				break
 			case 'use_relevant':
-				validConfig[name] = config[name] || 0.95
+				validConfig[name] = config[name]
 				break
 			case 'lexer':
 			case 'degenerator':
-			case 'storage':
 				validConfig[name] = config[name]
 				break
-			case 'dbPath':
-				validConfig[name] = config[name]
+			case 'storage':
+				validConfig['storage'] = config['storage']
 				break
 			default:
 				throw new Error(`Unknown configuration key: "${name}"`)
@@ -66,11 +39,10 @@ export class B8 {
 	private degenerator: Degenerator
 	private lexer: Lexer
 	private storage: SQLiteStorage
-	private version: number
 	private context: string = ''
 	private internals: DATASET
 
-	constructor(config: B8CONFIG = {}) {
+	constructor(config: B8CONFIG) {
 		this.config = validateConfig(config)
 
 		// The degenerator class
@@ -82,39 +54,154 @@ export class B8 {
 		// The storage backend with SQLite
 		this.storage = new SQLiteStorage(this.config.storage) as SQLiteStorage
 
-		// Get the internal database variables
-		this.version = this.storage.getVersion()
-
-		// Set up the internal database variables
-		this.internals = this.storage.getInternals(this.context) as DATASET
+		this.internals = {
+			positiveCount: 0,
+			negativeCount: 0,
+			totalLearned: 0,
+			totalUnlearned: 0,
+		}
 	}
 
-	async classify(text: string) {
-		// Let's first see if the user called the function correctly
-		if (text === null) {
-			return CLASSIFIER_TEXT_MISSING
+	async getTokens(tokens: string[]) {
+		const tokenData = await this.storage.getTokens(tokens)
+
+		// Check if we have to degenerate some tokens
+		const missingTokens: string[] = Object.keys(tokens).filter(
+			(token) => !(token in tokenData)
+		)
+
+		let degenerates_list = {}
+
+		if (missingTokens.length > 0) {
+			// Generate a list of degenerated tokens for the missing tokens ...
+			const missingTokenData: Record<string, string[]> =
+				this.degenerator.degenerate(missingTokens)
+
+			// ... and add them to the token data
+			Object.entries(missingTokenData).forEach(([token, degenerated]) => {
+				degenerates_list = { ...degenerates_list, [token]: degenerated }
+			})
 		}
+
+		const return_data_tokens: Record<string, TOKEN> = {}
+		const return_data_degenerates: Record<string, { [key: string]: TOKEN }> = {}
+
+		for (const token of tokens) {
+			if (tokenData[token]) {
+				// The token was found in the database
+				return_data_tokens[token] = tokenData[token]
+			} else {
+				// The token was not found, so we look if we can return data for degenerated tokens
+				for (const degenerate of this.degenerator.degenerates[token]) {
+					if (tokenData[degenerate]) {
+						// A degenerated version of the token was found in the database
+						if (!return_data_degenerates[token]) {
+							return_data_degenerates[token] = {}
+						}
+						return_data_degenerates[token][degenerate] = tokenData[degenerate]
+					}
+				}
+			}
+		}
+
+		// Now, all token data directly found in the database is in return_data_tokens
+		// and all data for degenerated versions is in return_data_degenerates
+		return {
+			tokens: return_data_tokens,
+			degenerates: return_data_degenerates,
+		}
+	}
+
+	async classify(text: string, context: string = 'b8_dataset') {
+		// update the context
+		await this.updateContext(context)
 
 		// Tokenize the text
 		const tokens = this.lexer.getTokens(text)
 
-		// Degenerate the tokens
-		this.degenerator.degenerate(tokens)
+		const tokenData = await this.getTokens(Object.keys(tokens))
 
-		// Calculate the affinities of all tokens
-		const tokenSpamValues: Record<string, number> = {}
-		for (const token in this.degenerator.degenerates) {
-			if (token in this.degenerator.degenerates) {
-				const tokenData = this.degenerator.degenerates[token]
-
-				const [hamCount, spamCount] = this.storage.getToken(tokenData)
-
-				tokenSpamValues[token] = this.calculateTokenAffinity(spamCount, hamCount)
-			}
+		const stats: {
+			wordCount: Record<string, number>
+			rating: Record<string, number>
+			importance: Record<string, number>
+		} = {
+			wordCount: {},
+			rating: {},
+			importance: {},
 		}
 
-		// Calculate the spaminess of the text
-		return this.calculateTextAffinity(tokenSpamValues)
+		Object.entries(tokens).forEach(([token, count]) => {
+			stats.wordCount[token] = count
+			// Although we only call this function only here ... let's do the calculation stuff in a
+			// function to make this a bit less confusing ;-)
+			stats.rating[token] = this.getProbability(token, tokenData)
+			stats.importance[token] = Math.abs(0.5 - stats.rating[token])
+		})
+
+		const relevantTokens = []
+		for (let i = 0; i < this.config.use_relevant; i++) {
+			const token = Object.keys(stats.importance)[0]
+
+			// Important tokens remain
+			if (token) {
+				// If the token's rating is relevant enough, use it
+				if (Math.abs(0.5 - stats.rating[token]) > this.config.min_dev) {
+					// Tokens that appear more than once also count more than once
+					for (let x = 0, l = stats.wordCount[token]; x < l; x++) {
+						relevantTokens.push(stats.rating[token])
+					}
+				}
+			} else {
+				// We have fewer words than we want to use, so we already use what we have and can break here
+				break
+			}
+
+			// Move to the next key in the importance object
+			delete stats.importance[token]
+		}
+	}
+
+	/**
+	 * Calculate the spaminess of a single token also considering "degenerated" versions
+	 *
+	 * @private
+	 * @param {string} word - The word to rate
+	 * @returns {number} - The word's rating
+	 */
+	getProbability(word, token_data) {
+		// Let's see what we have!
+		if (this.degenerator.degenerates[word]) {
+			// The token is in the database, so we can use its data as-is and calculate the
+			// spaminess of this token directly
+			return this.calculateTextAffinity(this.degenerator.degenerates[word])
+		}
+
+		// The token was not found, so do we at least have similar words?
+		if (tokenData.degenerates[word]) {
+			// We found similar words, so calculate the spaminess for each one and choose the most
+			// important one for further calculation
+
+			// The default rating is 0.5 simply saying nothing
+			let rating = 0.5
+
+			Object.entries(tokenData.degenerates[word]).forEach(([degenerate, count]) => {
+				// Calculate the rating of the current degenerated token
+				const ratingTmp = calculateProbability(count, this.internals)
+
+				// Is it more important than the rating of another degenerated version?
+				if (Math.abs(0.5 - ratingTmp) > Math.abs(0.5 - rating)) {
+					rating = ratingTmp
+				}
+			})
+
+			return rating
+		} else {
+			// The token is really unknown, so choose the default rating for completely unknown
+			// tokens. This strips down to the robX parameter so we can cheap out the freaky math
+			// ;-)
+			return config.rob_x
+		}
 	}
 
 	/**
@@ -124,146 +211,141 @@ export class B8 {
 	 * @param {number} pos - the count of the token in non-spam messages
 	 * @return {number} the spamminess of the token
 	 */
-	calculateTokenAffinity(neg: number, pos: number) {
+	calculateAffinity(neg: number, pos: number) {
 		//const totalTokens = negativeCount + positiveCount
 		const totalCategories =
 			this.internals.negativeCount + this.internals.positiveCount
 
-		const spamProbability =
+		const negProbability =
 			(neg + 1) / (this.internals.negativeCount + totalCategories)
-		const hamProbability =
+		const posProbability =
 			(pos + 1) / (this.internals.positiveCount + totalCategories)
 
-		return spamProbability / (spamProbability + hamProbability)
+		return negProbability / (negProbability + posProbability)
 	}
 
-	/**
-	 * Calculates the spaminess of a text based on token spam values and internals.
-	 *
-	 * @param {object} tokenSpamValues - An object containing token spam values.
-	 * @return {number} The spaminess of the text.
-	 */
-	calculateTextAffinity(tokenSpamValues: Record<string, number>) {
-		let textSpaminess = 1.0 // Initialize with neutral probability
-
-		for (const token in tokenSpamValues) {
-			if (tokenSpamValues[token]) {
-				const tokenSpaminess = tokenSpamValues[token]
-				textSpaminess *= tokenSpaminess
-			}
-		}
-
-		// Apply Bayesian probability
-		const priorSpamProbability =
-			this.internals.negativeCount /
-			(this.internals.negativeCount + this.internals.positiveCount)
-		const priorHamProbability =
-			this.internals.positiveCount /
-			(this.internals.negativeCount + this.internals.positiveCount)
-
-		textSpaminess *= priorSpamProbability
-		textSpaminess /= textSpaminess + priorHamProbability
-
-		return textSpaminess
-	}
-
-	learn(text: null | string, type: 'probable' | 'improbable') {
-		// Let's first see if the user called the function correctly
-		if (text === null) {
-			return TRAINER_TEXT_MISSING
-		}
-
-		return this.processText(text, type)
-	}
-
-	unlearn(text: null | string, type: 'probable' | 'improbable' | null) {
-		// Let's first see if the user called the function correctly
-		if (text === null) {
-			return TRAINER_TEXT_MISSING
-		}
-		if (type === null || !this.checkType(type)) {
-			return TRAINER_CATEGORY_MISSING
-		}
-
-		return this.processText(text, type)
-	}
-
-	async processText(text: string, context: string | undefined = undefined) {
-		// Tokenize the text
-		const tokens = this.lexer.getTokens(text)
-
-		// Degenerate the tokens
-		this.degenerator.degenerate(tokens)
-
+	async processText(
+		text: string,
+		type: 'probable' | 'improbable' = 'probable',
+		action: 'learn' | 'unlearn' = 'learn',
+		context: string | undefined = 'b8_dataset'
+	) {
 		// Retrieve or create the current context in the storage
 		if (context !== this.context) {
-			this.updateContext(context)
+			await this.updateContext(context)
 		}
-	}
+		// Tokenize the text
+		const tokens: TOKENS = this.lexer.getTokens(text)
 
-	async evaluate(
-		type: 'probable' | 'improbable' | null,
-		action: 'learn' | 'unlearn' = 'learn'
-	) {
-		let positiveCount = 0,
-			negativeCount = 0
-		for (const tokens in this.degenerator.degenerates) {
-			// Increase or decrease the right counter
-			if (action === 'learn') {
-				if (type === 'probable') {
-					positiveCount += tokens.length
-				} else if (type === 'improbable') {
-					negativeCount += tokens.length
+		const tokenData = await this.storage.getTokens(Object.keys(tokens))
+
+		// Process each token
+		for (const token in tokens) {
+			// Check if we have to degenerate this token
+			const currentToken = { pos: 0, neg: 0 }
+			if (token in tokenData) {
+				/** We already have this token, so update its data */
+				currentToken.pos = this.degenerator.degenerates[token].pos || 0
+				currentToken.neg = this.degenerator.degenerates[token].neg || 0
+
+				/** Increase or decrease the counter */
+				if (action === 'learn') {
+					if (type === 'probable') {
+						currentToken.pos += token.length
+					} else if (type === 'improbable') {
+						currentToken.neg += token.length
+					}
+				} else if (action == 'unlearn') {
+					if (type === 'probable') {
+						currentToken.pos -= token.length
+					} else if (type === 'improbable') {
+						currentToken.neg -= token.length
+					}
 				}
-			} else if (action == 'unlearn') {
-				if (type === 'probable') {
-					positiveCount -= tokens.length
-				} else if (type === 'improbable') {
-					negativeCount -= tokens.length
+
+				/** Update the stored dataset */
+				if (currentToken.pos != 0 || currentToken.neg !== 0) {
+					await this.storage.updateToken(
+						token,
+						[Math.abs(currentToken.pos), Math.abs(currentToken.neg)],
+						this.context
+					)
+				} else {
+					await this.storage.deleteToken(token, this.context)
+				}
+			} else {
+				// We don't have the token.
+				// If we unlearn a text, we can't delete it as we don't
+				// have it anyway, so do something if we learn a text
+				if (action === 'learn') {
+					if (type === 'probable') {
+						await this.storage.addToken(
+							token,
+							[currentToken.pos, 0],
+							this.context
+						)
+					} else if (type === 'improbable') {
+						await this.storage.addToken(
+							token,
+							[0, currentToken.neg],
+							this.context
+						)
+					}
 				}
 			}
 		}
 
-		// Update the token database based on the action (learn or unlearn)
+		// Now, all tokens have been processed, so let's update the right text
 		if (action === 'learn') {
-			this.storage.addTokens(
-				this.degenerator.flattenDegenerates(this.degenerator.degenerates),
-				{
-					count_probable: positiveCount,
-					count_improbable: negativeCount,
-				}
-			)
+			if (type === 'probable') {
+				this.internals.positiveCount++
+			} else if (type === 'improbable') {
+				this.internals.negativeCount++
+			}
 		} else if (action === 'unlearn') {
-			this.storage.deleteToken(
-				this.degenerator.flattenDegenerates(this.degenerator.degenerates)
-			)
+			if (type === 'probable') {
+				if (this.internals.positiveCount > 0) {
+					this.internals.positiveCount--
+				}
+			} else if (type === 'improbable') {
+				if (this.internals.negativeCount > 0) {
+					this.internals.negativeCount--
+				}
+			}
+		}
+
+		await this.storage.updateToken(
+			INTERNALS,
+			[this.internals.positiveCount, this.internals.negativeCount],
+			this.context
+		)
+	}
+
+	async learn(text: string, type: 'probable' | 'improbable', context: string) {
+		await this.processText(text, type, 'learn', context)
+	}
+	async unlearn(text: string, type: 'probable' | 'improbable', context: string) {
+		await this.processText(text, type, 'unlearn', context)
+	}
+
+	private async updateContext(context: string = 'b8_dataset') {
+		this.context = context
+		// Create the context if it doesn't exist
+		if (!this.storage.tableExists(this.context)) {
+			this.storage.createContext(this.context)
 		}
 
 		// Update the internals
-		if (action === 'learn') {
-			this.internals.totalLearned++
-		} else if (action === 'unlearn') {
-			this.internals.totalUnlearned++
+		const newInternals = await this.storage.getInternals(context)
+		if (newInternals) {
+			this.internals = newInternals
+		} else {
+			this.internals = {
+				positiveCount: 0,
+				negativeCount: 0,
+				totalLearned: 0,
+				totalUnlearned: 0,
+			}
 		}
-
-		// Update the context counters
-		if (type === 'probable') {
-			this.internals.positiveCount += action === 'learn' ? 1 : -1
-		} else if (type === 'improbable') {
-			this.internals.negativeCount += action === 'learn' ? 1 : -1
-		}
-
-		return true
-	}
-
-	checkType(type: string) {
-		return type === 'probable' || type === 'improbable'
-	}
-
-	private updateContext(context?: string) {
-		if (context && !this.storage.tableExists(context)) {
-			this.storage.createTable(context)
-		}
-		this.internals = this.storage.getInternals(context)
 	}
 }
