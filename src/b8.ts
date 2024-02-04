@@ -1,23 +1,22 @@
 import { Degenerator } from './degenerator'
 import { Lexer } from './lexer'
 import { SQLiteStorage } from './SQLiteStorage'
-import { configDefaults, INTERNALS } from './const'
-import { B8CONFIG, DATASET, LEXER_TOKEN, TOKEN, TOKEN_VALUE, TOKENDATA } from './types'
+import { configDefaults, DEFAULT_DATASET, INTERNALS_KEY } from './const'
+import { B8CONFIG, DATASET, LEXER_TOKEN, TOKEN_VALUE, TOKENDATA } from './types'
 
-function validateConfig(config: B8CONFIG) {
+function validateConfig(config?: Partial<B8CONFIG>) {
+	if (!config) {
+		return configDefaults
+	}
 	const validConfig: B8CONFIG = configDefaults
 	// Validate config data
 	Object.keys(config).forEach((name) => {
 		switch (name) {
 			case 'min_dev':
-				validConfig[name] = config[name]
-				break
 			case 'rob_s':
 			case 'rob_x':
-				validConfig[name] = config[name]
-				break
 			case 'use_relevant':
-				validConfig[name] = config[name]
+				validConfig[name] = Number(config[name])
 				break
 			case 'lexer':
 			case 'degenerator':
@@ -39,11 +38,11 @@ export class B8 {
 	private degenerator: Degenerator
 	private lexer: Lexer
 	private storage: SQLiteStorage
-	private context: string = ''
+	private context: string = DEFAULT_DATASET
 	private internals: DATASET
 	private tokenData: TOKENDATA | null = null
 
-	constructor(config: B8CONFIG) {
+	constructor(config?: B8CONFIG) {
 		this.config = validateConfig(config)
 
 		// The degenerator class
@@ -55,6 +54,7 @@ export class B8 {
 		// The storage backend with SQLite
 		this.storage = new SQLiteStorage(this.config.storage) as SQLiteStorage
 
+		// Ensure the default internal stats are created
 		this.internals = {
 			positiveCount: 0,
 			negativeCount: 0,
@@ -63,7 +63,7 @@ export class B8 {
 		}
 	}
 
-	async get(tokens: string[]): Promise<TOKENDATA> {
+	private async get(tokens: string[]): Promise<TOKENDATA> {
 		const tokenData = await this.storage.getTokens(tokens)
 
 		// Check if we have to degenerate some tokens
@@ -115,12 +115,16 @@ export class B8 {
 
 	async classify(text: string, context: string = 'b8_dataset') {
 		// update the context
-		await this.updateContext(context)
+		if (context !== this.context) {
+			await this.updateContext(context)
+		}
 
 		// Tokenize the text
 		const tokens = this.lexer.getTokens(text)
 
 		this.tokenData = await this.get(Object.keys(tokens))
+
+		const relevantScore = this.config.use_relevant || 0.95
 
 		const stats: {
 			wordCount: Record<string, number>
@@ -132,16 +136,24 @@ export class B8 {
 			importance: {},
 		}
 
+		// sort stats.importance by value
+		stats.importance = Object.fromEntries(
+			Object.entries(stats.importance).sort((a, b) => b[1] - a[1])
+		)
+
+		// Calculate the affinity of each token
 		Object.entries(tokens).forEach(([token, count]) => {
 			stats.wordCount[token] = count
 			// Although we only call this function only here ... let's do the calculation stuff in a
 			// function to make this a bit less confusing ;-)
-			stats.rating[token] = this.getProbability(token, this.tokenData)
+			stats.rating[token] = this.tokenData
+				? this.getProbability(token, this.tokenData)
+				: 0.5
 			stats.importance[token] = Math.abs(0.5 - stats.rating[token])
 		})
 
 		const relevantTokens = []
-		for (let i = 0; i < this.config.use_relevant; i++) {
+		for (let i = 0; i < relevantScore; i++) {
 			const token = Object.keys(stats.importance)[0]
 
 			// Important tokens remain
@@ -161,6 +173,40 @@ export class B8 {
 			// Move to the next key in the importance object
 			delete stats.importance[token]
 		}
+
+		// We set both haminess and spaminess to 1 for the first multiplying
+		let haminess = 1
+		let spaminess = 1
+
+		// Consider all relevant ratings
+		for (const value of relevantTokens) {
+			haminess *= 1.0 - value
+			spaminess *= value
+		}
+
+		// If no token was good for calculation, we really don't know how to rate this text,
+		// so we can return 0.5 without further calculations.
+		if (haminess === 1 && spaminess === 1) {
+			return 0.5
+		}
+
+		// Calculate the combined rating
+
+		// Get the number of relevant ratings
+		const n = relevantTokens.length
+
+		// The actual haminess and spaminess
+		haminess = 1 - Math.pow(haminess, 1 / n)
+		spaminess = 1 - Math.pow(spaminess, 1 / n)
+
+		// Calculate the combined indicator
+		let probability = (haminess - spaminess) / (haminess + spaminess)
+
+		// We want a value between 0 and 1, not between -1 and +1, so ...
+		probability = (1 + probability) / 2
+
+		// Alea iacta est
+		return probability
 	}
 
 	/**
@@ -171,7 +217,7 @@ export class B8 {
 	 * @param tokenData - The token dataset
 	 * @returns {number} - The word's rating
 	 */
-	getProbability(word: string, tokenData: TOKENDATA) {
+	private getProbability(word: string, tokenData: TOKENDATA): number {
 		// Let's see what we have!
 		if (tokenData.degenerates[word]) {
 			// The token is in the database, so we can use its data as-is and calculate the spaminess of this token directly
@@ -188,7 +234,7 @@ export class B8 {
 
 			Object.entries(tokenData.degenerates[word]).forEach(([, token]) => {
 				// Calculate the rating of the current degenerated token
-				const ratingTmp = this.calculateAffinity(token as TOKEN)
+				const ratingTmp = this.calculateAffinity(token)
 
 				// Is it more important than the rating of another degenerated version?
 				if (Math.abs(0.5 - ratingTmp) > Math.abs(0.5 - rating)) {
@@ -202,7 +248,7 @@ export class B8 {
 			// tokens.
 			// This strips down to the robX parameter, so we can cheap out the freaky math
 			// ;-)
-			return this.config.rob_x
+			return this.config.rob_x || 0.5
 		}
 	}
 
@@ -213,7 +259,7 @@ export class B8 {
 	 *
 	 * @return {number} the spamminess of the token
 	 */
-	calculateAffinity(token: TOKEN_VALUE) {
+	private calculateAffinity(token: TOKEN_VALUE) {
 		//const totalTokens = negativeCount + positiveCount
 		const totalCategories =
 			this.internals.negativeCount + this.internals.positiveCount
@@ -226,7 +272,7 @@ export class B8 {
 		return negProbability / (negProbability + posProbability)
 	}
 
-	async processText(
+	private async processText(
 		text: string,
 		type: 'probable' | 'improbable' = 'probable',
 		action: 'learn' | 'unlearn' = 'learn',
@@ -316,20 +362,49 @@ export class B8 {
 		}
 
 		await this.storage.updateToken(
-			INTERNALS,
+			INTERNALS_KEY,
 			[this.internals.positiveCount, this.internals.negativeCount],
 			this.context
 		)
 	}
 
-	async learn(text: string, type: 'probable' | 'improbable', context: string) {
+	/**
+	 * This function learns a text from the dataset
+	 *
+	 * @param text the text to learn
+	 * @param type if the text is probable or improbable
+	 * @param context the context to unlearn from
+	 */
+	async learn(
+		text: string,
+		type: 'probable' | 'improbable',
+		context: string = DEFAULT_DATASET
+	) {
 		await this.processText(text, type, 'learn', context)
 	}
-	async unlearn(text: string, type: 'probable' | 'improbable', context: string) {
+
+	/**
+	 * This function unlearns a text from the dataset
+	 *
+	 * @param text the text to unlearn
+	 * @param type if the text is probable or improbable
+	 * @param context the context to unlearn from
+	 */
+	async unlearn(
+		text: string,
+		type: 'probable' | 'improbable',
+		context: string = DEFAULT_DATASET
+	) {
 		await this.processText(text, type, 'unlearn', context)
 	}
 
-	private async updateContext(context: string = 'b8_dataset') {
+	/**
+	 * This function retrieves the internal data of the dataset
+	 *
+	 * @param context the context to retrieve the data from
+	 * @private
+	 */
+	private async updateContext(context: string = DEFAULT_DATASET) {
 		this.context = context
 		// Create the context if it doesn't exist
 		if (!this.storage.tableExists(this.context)) {

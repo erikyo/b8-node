@@ -5,7 +5,7 @@ export type B8CONFIG = {
 	rob_s: number
 	rob_x: number
 	use_relevant: number
-	lexer: {
+	lexer?: {
 		min_size?: number
 		max_size?: number
 		get_uris?: boolean
@@ -14,11 +14,11 @@ export type B8CONFIG = {
 		allow_numbers?: boolean
 		stopwords?: string[]
 	}
-	degenerator: {
+	degenerator?: {
 		multibyte?: boolean
 		encoding?: string
 	}
-	storage: {
+	storage?: {
 		dbPath: string
 	}
 }
@@ -35,11 +35,6 @@ export interface TOKENDATA {
 	degenerates: Record<string, TOKENS>
 }
 
-export interface TOKEN extends Database {
-	pos: number
-	neg: number
-}
-
 export type TOKEN_VALUE = { pos: number; neg: number }
 export interface TOKENS {
 	[key: string]: TOKEN_VALUE
@@ -47,7 +42,9 @@ export interface TOKENS {
 
 export type LEXER_TOKEN = Record<string, number>
 
-export interface ROW extends TOKEN {
+export interface ROW extends Database {
+	pos: number
+	neg: number
 	token: string
 }
 

@@ -38,9 +38,10 @@ export class Lexer {
 
 		if (text.trim() === '') {
 			console.error(LEXER_TEXT_EMPTY)
+			return {} as LEXER_TOKEN
 		}
 
-		// Tokenization logic...
+		// TODO: add a Tokenization logic...
 		const tokens = text.split(/\s+/)
 
 		this.tokens = this.countWordOccurrences(tokens)

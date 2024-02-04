@@ -1,7 +1,13 @@
 import * as sqlite3 from 'sqlite3'
 
-import { DB_VERSION, defaultPath, INTERNALS } from './const'
-import { B8CONFIG, DATASET, ROW, ROWS, TOKEN, TOKENS } from './types'
+import {
+	DB_VERSION,
+	DB_VERSION_KEY,
+	DEFAULT_DATASET,
+	defaultPath,
+	INTERNALS_KEY,
+} from './const'
+import { B8CONFIG, DATASET, ROW, ROWS, TOKENS } from './types'
 
 export class SQLiteStorage {
 	private db: sqlite3.Database
@@ -12,10 +18,8 @@ export class SQLiteStorage {
 		this.config = config
 
 		// open	SQLite database
-		if (!config || !config.dbPath) {
+		if (!config?.dbPath) {
 			this.db = this.createDatabase(defaultPath)
-			// Set the default path for later use
-			config.dbPath = defaultPath
 		} else {
 			// open	SQLite database
 			this.db = new sqlite3.Database(config.dbPath as string, (err) => {
@@ -26,8 +30,8 @@ export class SQLiteStorage {
 		}
 
 		// Ensure the default table is created
-		if (!this.tableExists('b8_dataset')) {
-			this.createContext('b8_dataset')
+		if (!this.tableExists(DEFAULT_DATASET)) {
+			this.createContext(DEFAULT_DATASET)
 		}
 	}
 
@@ -57,15 +61,15 @@ export class SQLiteStorage {
 		)
 	}
 
-	createTable(tableName: string = 'b8_dataset') {
+	createTable(tableName: string = DEFAULT_DATASET) {
 		const INIT_QUERIES = {
-			createTableQuery: `CREATE TABLE IF NOT EXISTS ${tableName}(
+			createTableQuery: `CREATE TABLE IF NOT EXISTS ${tableName} (
 				token varchar PRIMARY KEY,
 				pos int unsigned,
 				neg int unsigned
 			);`,
-			insertVersionQuery: `INSERT INTO ${tableName} (token, pos) VALUES ('b8*dbversion', ${DB_VERSION} )`,
-			insertTextsQuery: `INSERT INTO ${tableName} (token, pos, neg) VALUES (${INTERNALS}, 0, 0)`,
+			insertVersionQuery: `INSERT INTO ${tableName} (token, pos) VALUES ('${DB_VERSION_KEY}', ${DB_VERSION})`,
+			insertTextsQuery: `INSERT INTO ${tableName} (token, pos, neg) VALUES ('${INTERNALS_KEY}', 0, 0)`,
 		}
 
 		this.db.serialize(() => {
@@ -90,7 +94,7 @@ export class SQLiteStorage {
 	}
 
 	async getVersion(): Promise<number> {
-		const token = await this.getToken('b8*dbversion', 'b8_dataset')
+		const token = await this.getToken(DB_VERSION_KEY, DEFAULT_DATASET)
 		// await the promise and return
 		if (token) {
 			return token.pos
@@ -104,8 +108,8 @@ export class SQLiteStorage {
 	 *
 	 * @return {object} - An object containing the version and the retrieved internals
 	 */
-	async getInternals(context: string = 'b8_dataset'): Promise<DATASET | false> {
-		const internals = await this.getToken(INTERNALS, context)
+	async getInternals(context: string = DEFAULT_DATASET): Promise<DATASET | false> {
+		const internals = await this.getToken(INTERNALS_KEY, context)
 		return internals
 			? {
 					positiveCount: internals.pos,
@@ -135,7 +139,7 @@ export class SQLiteStorage {
 	addToken(
 		token: string,
 		count: [number, number] = [0, 0],
-		context: string = 'b8_dataset'
+		context: string = DEFAULT_DATASET
 	): Promise<boolean> {
 		return new Promise<boolean>((resolve, reject) => {
 			const query = `INSERT INTO ${context} (token, pos, neg) VALUES (?, ?, ?)`
@@ -156,7 +160,7 @@ export class SQLiteStorage {
 	updateToken(
 		token: string,
 		count: [number, number],
-		context: string = 'b8_dataset'
+		context: string = DEFAULT_DATASET
 	): Promise<boolean> {
 		return new Promise<boolean>((resolve, reject) => {
 			const query = `INSERT OR REPLACE INTO ${context} (token, pos, neg) VALUES (?, ?, ?)`
@@ -173,7 +177,7 @@ export class SQLiteStorage {
 			})
 		})
 	}
-	addTokens(token: ROWS, context: string = 'b8_dataset'): Promise<boolean> {
+	addTokens(token: ROWS, context: string = DEFAULT_DATASET): Promise<boolean> {
 		return new Promise<boolean>((resolve, reject) => {
 			const query = `INSERT OR REPLACE INTO ${context} (token, pos, neg) VALUES (?, ?, ?)`
 
@@ -190,7 +194,7 @@ export class SQLiteStorage {
 		})
 	}
 
-	deleteToken(token: string, context: string = 'b8_dataset'): Promise<boolean> {
+	deleteToken(token: string, context: string = DEFAULT_DATASET): Promise<boolean> {
 		return new Promise<boolean>((resolve, reject) => {
 			const query = `DELETE FROM ${context} WHERE token = ?`
 
@@ -207,7 +211,7 @@ export class SQLiteStorage {
 		})
 	}
 
-	getToken(token: string, context: string = 'b8_dataset'): Promise<ROW | false> {
+	getToken(token: string, context: string = DEFAULT_DATASET): Promise<ROW | false> {
 		return new Promise<ROW | false>((resolve, reject) => {
 			const query = `SELECT pos, neg
                      FROM ${context}
@@ -228,8 +232,8 @@ export class SQLiteStorage {
 		})
 	}
 
-	getTokens(tokens: string[], context: string = 'b8_dataset'): Promise<TOKENS> {
-		return new Promise<Record<string, TOKEN>>((resolve, reject) => {
+	getTokens(tokens: string[], context: string = DEFAULT_DATASET): Promise<TOKENS> {
+		return new Promise<Record<string, ROW>>((resolve, reject) => {
 			const placeholders = tokens.map(() => '?').join(', ')
 			const query = `SELECT token, pos, neg
                      FROM ${context}
@@ -241,15 +245,13 @@ export class SQLiteStorage {
 					console.error(err)
 					reject(err)
 				} else {
-					const tokenMap = new Map<string, TOKEN>()
+					const tokenMap = new Map<string, ROW>()
 					Object.entries(rows).forEach(([, row]) =>
-						tokenMap.set(row.token, { pos: row.pos, neg: row.neg } as TOKEN)
+						tokenMap.set(row.token, { pos: row.pos, neg: row.neg } as ROW)
 					)
 
 					// return an object if rows are found
-					if (tokenMap.size > 0) {
-						resolve(Object.fromEntries(tokenMap))
-					}
+					resolve(Object.fromEntries(tokenMap))
 				}
 			})
 		})

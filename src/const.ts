@@ -1,15 +1,12 @@
 import { B8CONFIG } from './types'
 
 export const DB_VERSION: number = 1
-export const CLASSIFIER_TEXT_MISSING = 'CLASSIFIER_TEXT_MISSING'
-export const TRAINER_TEXT_MISSING = 'TRAINER_TEXT_MISSING'
-export const TRAINER_CATEGORY_MISSING = 'TRAINER_CATEGORY_MISSING'
-export const TRAINER_CATEGORY_FAIL = 'TRAINER_CATEGORY_FAIL'
 export const LEXER_TEXT_NOT_STRING = 'LEXER_TEXT_NOT_STRING'
 export const LEXER_TEXT_EMPTY = 'LEXER_TEXT_EMPTY'
 export const defaultPath = 'b8.db'
-
-export const INTERNALS = 'b8*texts'
+export const DEFAULT_DATASET = 'b8_dataset'
+export const DB_VERSION_KEY = 'b8*dbversion'
+export const INTERNALS_KEY = 'b8*texts'
 
 export const configDefaults: B8CONFIG = {
 	min_dev: 0.01,
