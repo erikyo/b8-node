@@ -1,20 +1,18 @@
 import * as sqlite3 from 'sqlite3'
 
-import { DB_VERSION, defaultPath } from './const'
-import { B8CONFIG, DATASET, ROW, ROWS } from './types'
-import { throws } from 'node:assert'
-import { Database } from 'sqlite3'
+import { DB_VERSION, defaultPath, INTERNALS } from './const'
+import { B8CONFIG, DATASET, ROW, ROWS, TOKEN } from './types'
 
 export class SQLiteStorage {
 	private db: sqlite3.Database
-	private config: B8CONFIG
+	private config: B8CONFIG['storage']
 
-	constructor(config: B8CONFIG = {}) {
+	constructor(config: B8CONFIG['storage']) {
 		// store the config
 		this.config = config
 
 		// open	SQLite database
-		if (!config.dbPath) {
+		if (!config || !config.dbPath) {
 			this.db = this.createDatabase(defaultPath)
 			// Set the default path for later use
 			config.dbPath = defaultPath
@@ -29,7 +27,7 @@ export class SQLiteStorage {
 
 		// Ensure the default table is created
 		if (!this.tableExists('b8_dataset')) {
-			this.createTable()
+			this.createContext('b8_dataset')
 		}
 	}
 
@@ -67,34 +65,38 @@ export class SQLiteStorage {
 				neg int unsigned
 			);`,
 			insertVersionQuery: `INSERT INTO ${tableName} (token, pos) VALUES ('b8*dbversion', ${DB_VERSION} )`,
-			insertTextsQuery: `INSERT INTO ${tableName} (token, pos, neg) VALUES ('b8*texts', 0, 0)`,
+			insertTextsQuery: `INSERT INTO ${tableName} (token, pos, neg) VALUES (${INTERNALS}, 0, 0)`,
 		}
 
-		this.db.exec(INIT_QUERIES.createTableQuery, (err) => {
-			if (err) {
-				console.error(err)
-			}
-		})
+		this.db.serialize(() => {
+			this.db.run(INIT_QUERIES.createTableQuery, (err) => {
+				if (err) {
+					console.error(err)
+				}
+			})
 
-		this.db.exec(INIT_QUERIES.insertVersionQuery, (err) => {
-			if (err) {
-				console.error(err)
-			}
-		})
+			this.db.run(INIT_QUERIES.insertVersionQuery, (err) => {
+				if (err) {
+					console.error(err)
+				}
+			})
 
-		this.db.exec(INIT_QUERIES.insertTextsQuery, (err) => {
-			if (err) {
-				console.error(err)
-			}
+			this.db.run(INIT_QUERIES.insertTextsQuery, (err) => {
+				if (err) {
+					console.error(err)
+				}
+			})
 		})
 	}
 
 	async getVersion(): Promise<number> {
 		const token = await this.getToken('b8*dbversion', 'b8_dataset')
-		if (token instanceof Error) {
+		// await the promise and return
+		if (token) {
+			return token.pos
+		} else {
 			return 0
 		}
-		return token.pos as number
 	}
 
 	/**
@@ -102,14 +104,16 @@ export class SQLiteStorage {
 	 *
 	 * @return {object} - An object containing the version and the retrieved internals
 	 */
-	async getInternals(context: string = 'b8_dataset'): Promise<DATASET> {
-		const internals = await this.getToken('b8*internals', context)
-		return {
-			positiveCount: internals.pos,
-			negativeCount: internals.neg,
-			totalLearned: 0,
-			totalUnlearned: 0,
-		}
+	async getInternals(context: string = 'b8_dataset'): Promise<DATASET | false> {
+		const internals = await this.getToken(INTERNALS, context)
+		return internals
+			? {
+					positiveCount: internals.pos,
+					negativeCount: internals.neg,
+					totalLearned: 0,
+					totalUnlearned: 0,
+				}
+			: internals
 	}
 
 	/**
@@ -117,21 +121,8 @@ export class SQLiteStorage {
 	 *
 	 * @param context
 	 */
-	createContext(context: string): Promise<DATASET> {
-		return new Promise((resolve, reject) => {
-			this.db.run(`INSERT INTO ${context} (name) VALUES (?)`, [context], (err) => {
-				if (err) {
-					reject(err)
-				} else {
-					resolve({
-						positiveCount: 0,
-						negativeCount: 0,
-						totalLearned: 0,
-						totalUnlearned: 0,
-					})
-				}
-			})
-		})
+	createContext(context: string) {
+		this.createTable(context)
 	}
 
 	/**
@@ -143,7 +134,7 @@ export class SQLiteStorage {
 	 */
 	addToken(
 		token: string,
-		count: [number, number],
+		count: [number, number] = [0, 0],
 		context: string = 'b8_dataset'
 	): Promise<boolean> {
 		return new Promise<boolean>((resolve, reject) => {
@@ -168,15 +159,31 @@ export class SQLiteStorage {
 		context: string = 'b8_dataset'
 	): Promise<boolean> {
 		return new Promise<boolean>((resolve, reject) => {
-			const query = `UPDATE ${context} SET pos = ?, neg = ? WHERE token = ?`
+			const query = `INSERT OR REPLACE INTO ${context} (token, pos, neg) VALUES (?, ?, ?)`
 
-			this.db.run(query, [...count, token], function (err: Error | null) {
+			this.db.run(query, [token, ...count], function (err: Error | null) {
 				if (err) {
 					console.error(err)
 					reject(err)
 				} else {
-					// Check if a row was affected (indicating a successful update)
+					// Check if a row was affected (indicating a successful update or insert)
 					const success = (this.changes || 0) > 0
+					resolve(success)
+				}
+			})
+		})
+	}
+	addTokens(token: ROWS, context: string = 'b8_dataset'): Promise<boolean> {
+		return new Promise<boolean>((resolve, reject) => {
+			const query = `INSERT OR REPLACE INTO ${context} (token, pos, neg) VALUES (?, ?, ?)`
+
+			this.db.all(query, token, function (err: Error | null, res) {
+				if (err) {
+					console.error(err)
+					reject(err)
+				} else {
+					// Check if a row was affected (indicating a successful update or insert)
+					const success = (res.length || 0) > 0
 					resolve(success)
 				}
 			})
@@ -200,8 +207,8 @@ export class SQLiteStorage {
 		})
 	}
 
-	getToken(token: string, context: string = 'b8_dataset'): Promise<ROW> {
-		return new Promise<ROW>((resolve, reject) => {
+	getToken(token: string, context: string = 'b8_dataset'): Promise<ROW | false> {
+		return new Promise<ROW | false>((resolve, reject) => {
 			const query = `SELECT pos, neg
                      FROM ${context}
                      WHERE token = ?
@@ -214,17 +221,18 @@ export class SQLiteStorage {
 				} else {
 					if (row) {
 						resolve(row)
-					} else {
-						// Handle the case where no row is found
-						resolve({ pos: 0, neg: 0 } as ROW)
 					}
+					resolve(false)
 				}
 			})
 		})
 	}
 
-	getTokens(tokens: string[], context: string = 'b8_dataset'): Promise<ROWS> {
-		return new Promise<ROWS>((resolve, reject) => {
+	getTokens(
+		tokens: string[],
+		context: string = 'b8_dataset'
+	): Promise<Record<string, TOKEN>> {
+		return new Promise<Record<string, TOKEN>>((resolve, reject) => {
 			const placeholders = tokens.map(() => '?').join(', ')
 			const query = `SELECT token, pos, neg
                      FROM ${context}
@@ -236,7 +244,15 @@ export class SQLiteStorage {
 					console.error(err)
 					reject(err)
 				} else {
-					resolve(rows || []) // Return an empty array if no rows are found
+					const tokenMap = new Map<string, TOKEN>()
+					Object.entries(rows).forEach(([, row]) =>
+						tokenMap.set(row.token, { pos: row.pos, neg: row.neg } as TOKEN)
+					)
+
+					// return an object if rows are found
+					if (tokenMap.size > 0) {
+						resolve(Object.fromEntries(tokenMap))
+					}
 				}
 			})
 		})
