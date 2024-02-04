@@ -2,7 +2,7 @@ import { Degenerator } from './degenerator'
 import { Lexer } from './lexer'
 import { SQLiteStorage } from './SQLiteStorage'
 import { configDefaults, INTERNALS } from './const'
-import { B8CONFIG, DATASET, TOKEN, TOKENS } from './types'
+import { B8CONFIG, DATASET, TOKEN, LEXER_TOKEN, TOKENS, TOKENDATA } from './types'
 
 function validateConfig(config: B8CONFIG) {
 	const validConfig: B8CONFIG = configDefaults
@@ -41,6 +41,7 @@ export class B8 {
 	private storage: SQLiteStorage
 	private context: string = ''
 	private internals: DATASET
+	private tokenData: TOKENDATA = {}
 
 	constructor(config: B8CONFIG) {
 		this.config = validateConfig(config)
@@ -62,7 +63,7 @@ export class B8 {
 		}
 	}
 
-	async getTokens(tokens: string[]) {
+	async get(tokens: string[]): Promise<TOKENDATA> {
 		const tokenData = await this.storage.getTokens(tokens)
 
 		// Check if we have to degenerate some tokens
@@ -83,15 +84,15 @@ export class B8 {
 			})
 		}
 
-		const return_data_tokens: Record<string, TOKEN> = {}
-		const return_data_degenerates: Record<string, { [key: string]: TOKEN }> = {}
+		const return_data_tokens: TOKENDATA['tokens'] = {}
+		const return_data_degenerates: TOKENDATA['degenerates'] = {}
 
 		for (const token of tokens) {
 			if (tokenData[token]) {
 				// The token was found in the database
 				return_data_tokens[token] = tokenData[token]
 			} else {
-				// The token was not found, so we look if we can return data for degenerated tokens
+				/** The token was not found, so we look if we can return data for degenerated tokens */
 				for (const degenerate of this.degenerator.degenerates[token]) {
 					if (tokenData[degenerate]) {
 						// A degenerated version of the token was found in the database
@@ -119,7 +120,7 @@ export class B8 {
 		// Tokenize the text
 		const tokens = this.lexer.getTokens(text)
 
-		const tokenData = await this.getTokens(Object.keys(tokens))
+		this.tokenData = await this.get(Object.keys(tokens))
 
 		const stats: {
 			wordCount: Record<string, number>
@@ -135,7 +136,7 @@ export class B8 {
 			stats.wordCount[token] = count
 			// Although we only call this function only here ... let's do the calculation stuff in a
 			// function to make this a bit less confusing ;-)
-			stats.rating[token] = this.getProbability(token, tokenData)
+			stats.rating[token] = this.getProbability(token)
 			stats.importance[token] = Math.abs(0.5 - stats.rating[token])
 		})
 
@@ -167,27 +168,30 @@ export class B8 {
 	 *
 	 * @private
 	 * @param {string} word - The word to rate
+	 * @param token_data
 	 * @returns {number} - The word's rating
 	 */
-	getProbability(word, token_data) {
+	getProbability(word: string) {
 		// Let's see what we have!
-		if (this.degenerator.degenerates[word]) {
-			// The token is in the database, so we can use its data as-is and calculate the
-			// spaminess of this token directly
-			return this.calculateTextAffinity(this.degenerator.degenerates[word])
+		if (this.tokenData[word]) {
+			// The token is in the database, so we can use its data as-is and calculate the spaminess of this token directly
+			return this.calculateAffinity(
+				this.tokenData[word].pos,
+				this.tokenData[word].neg
+			)
 		}
 
 		// The token was not found, so do we at least have similar words?
-		if (tokenData.degenerates[word]) {
+		if (this.tokenData[word]) {
 			// We found similar words, so calculate the spaminess for each one and choose the most
 			// important one for further calculation
 
 			// The default rating is 0.5 simply saying nothing
 			let rating = 0.5
 
-			Object.entries(tokenData.degenerates[word]).forEach(([degenerate, count]) => {
+			Object.entries(this.tokenData[word]).forEach(([degenerate, count]) => {
 				// Calculate the rating of the current degenerated token
-				const ratingTmp = calculateProbability(count, this.internals)
+				const ratingTmp = this.calculateAffinity(count, this.internals)
 
 				// Is it more important than the rating of another degenerated version?
 				if (Math.abs(0.5 - ratingTmp) > Math.abs(0.5 - rating)) {
@@ -235,7 +239,7 @@ export class B8 {
 			await this.updateContext(context)
 		}
 		// Tokenize the text
-		const tokens: TOKENS = this.lexer.getTokens(text)
+		const tokens: LEXER_TOKEN = this.lexer.getTokens(text)
 
 		const tokenData = await this.storage.getTokens(Object.keys(tokens))
 

@@ -30,12 +30,20 @@ export interface DATASET {
 	totalUnlearned: number
 }
 
+export interface TOKENDATA {
+	tokens: { [key: string]: TOKEN }
+	degenerates: Record<string, { [key: string]: TOKEN }>
+}
+
 export interface TOKEN extends Database {
 	pos: number
 	neg: number
 }
+export interface TOKENS {
+	[x: string]: { pos: number; neg: number }
+}
 
-export type TOKENS = Record<string, number>
+export type LEXER_TOKEN = Record<string, number>
 
 export interface ROW extends TOKEN {
 	token: string
