@@ -1,5 +1,5 @@
 import { convert } from 'html-to-text'
-import { LEXER_TEXT_EMPTY, LEXER_TEXT_NOT_STRING } from './const'
+import { LEXER_TEXT_EMPTY } from './const'
 import { B8CONFIG, LEXER_TOKEN } from './types'
 
 export class Lexer {
@@ -32,11 +32,7 @@ export class Lexer {
 	 * @param {string} text - the input text to tokenize
 	 * @return {string[]} the array of tokens generated from the input text
 	 */
-	getTokens(text: string | null): LEXER_TOKEN {
-		if (typeof text !== 'string') {
-			console.error(LEXER_TEXT_NOT_STRING)
-		}
-
+	getTokens(text: string): LEXER_TOKEN {
 		// Convert HTML to plain text
 		text = convert(text)
 

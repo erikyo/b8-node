@@ -2,7 +2,7 @@ import { Degenerator } from './degenerator'
 import { Lexer } from './lexer'
 import { SQLiteStorage } from './SQLiteStorage'
 import { configDefaults, INTERNALS } from './const'
-import { B8CONFIG, DATASET, TOKEN, LEXER_TOKEN, TOKENS, TOKENDATA } from './types'
+import { B8CONFIG, DATASET, LEXER_TOKEN, TOKEN, TOKEN_VALUE, TOKENDATA } from './types'
 
 function validateConfig(config: B8CONFIG) {
 	const validConfig: B8CONFIG = configDefaults
@@ -41,7 +41,7 @@ export class B8 {
 	private storage: SQLiteStorage
 	private context: string = ''
 	private internals: DATASET
-	private tokenData: TOKENDATA = {}
+	private tokenData: TOKENDATA | null = null
 
 	constructor(config: B8CONFIG) {
 		this.config = validateConfig(config)
@@ -136,7 +136,7 @@ export class B8 {
 			stats.wordCount[token] = count
 			// Although we only call this function only here ... let's do the calculation stuff in a
 			// function to make this a bit less confusing ;-)
-			stats.rating[token] = this.getProbability(token)
+			stats.rating[token] = this.getProbability(token, this.tokenData)
 			stats.importance[token] = Math.abs(0.5 - stats.rating[token])
 		})
 
@@ -168,30 +168,27 @@ export class B8 {
 	 *
 	 * @private
 	 * @param {string} word - The word to rate
-	 * @param token_data
+	 * @param tokenData - The token dataset
 	 * @returns {number} - The word's rating
 	 */
-	getProbability(word: string) {
+	getProbability(word: string, tokenData: TOKENDATA) {
 		// Let's see what we have!
-		if (this.tokenData[word]) {
+		if (tokenData.degenerates[word]) {
 			// The token is in the database, so we can use its data as-is and calculate the spaminess of this token directly
-			return this.calculateAffinity(
-				this.tokenData[word].pos,
-				this.tokenData[word].neg
-			)
+			return this.calculateAffinity(tokenData.tokens[word])
 		}
 
 		// The token was not found, so do we at least have similar words?
-		if (this.tokenData[word]) {
+		if (tokenData.degenerates[word]) {
 			// We found similar words, so calculate the spaminess for each one and choose the most
 			// important one for further calculation
 
 			// The default rating is 0.5 simply saying nothing
 			let rating = 0.5
 
-			Object.entries(this.tokenData[word]).forEach(([degenerate, count]) => {
+			Object.entries(tokenData.degenerates[word]).forEach(([, token]) => {
 				// Calculate the rating of the current degenerated token
-				const ratingTmp = this.calculateAffinity(count, this.internals)
+				const ratingTmp = this.calculateAffinity(token as TOKEN)
 
 				// Is it more important than the rating of another degenerated version?
 				if (Math.abs(0.5 - ratingTmp) > Math.abs(0.5 - rating)) {
@@ -202,28 +199,29 @@ export class B8 {
 			return rating
 		} else {
 			// The token is really unknown, so choose the default rating for completely unknown
-			// tokens. This strips down to the robX parameter so we can cheap out the freaky math
+			// tokens.
+			// This strips down to the robX parameter, so we can cheap out the freaky math
 			// ;-)
-			return config.rob_x
+			return this.config.rob_x
 		}
 	}
 
 	/**
 	 * Calculates the spamminess of a token based on spam and ham counts.
 	 *
-	 * @param {number} neg - the count of the token in spam messages
-	 * @param {number} pos - the count of the token in non-spam messages
+	 * @param token - The token to calculate
+	 *
 	 * @return {number} the spamminess of the token
 	 */
-	calculateAffinity(neg: number, pos: number) {
+	calculateAffinity(token: TOKEN_VALUE) {
 		//const totalTokens = negativeCount + positiveCount
 		const totalCategories =
 			this.internals.negativeCount + this.internals.positiveCount
 
 		const negProbability =
-			(neg + 1) / (this.internals.negativeCount + totalCategories)
+			(token.neg + 1) / (this.internals.negativeCount + totalCategories)
 		const posProbability =
-			(pos + 1) / (this.internals.positiveCount + totalCategories)
+			(token.pos + 1) / (this.internals.positiveCount + totalCategories)
 
 		return negProbability / (negProbability + posProbability)
 	}
@@ -244,26 +242,24 @@ export class B8 {
 		const tokenData = await this.storage.getTokens(Object.keys(tokens))
 
 		// Process each token
-		for (const token in tokens) {
+		for (const [token, count] of Object.entries(tokens)) {
 			// Check if we have to degenerate this token
-			const currentToken = { pos: 0, neg: 0 }
 			if (token in tokenData) {
 				/** We already have this token, so update its data */
-				currentToken.pos = this.degenerator.degenerates[token].pos || 0
-				currentToken.neg = this.degenerator.degenerates[token].neg || 0
+				const currentToken = tokenData[token]
 
 				/** Increase or decrease the counter */
 				if (action === 'learn') {
 					if (type === 'probable') {
-						currentToken.pos += token.length
+						currentToken.pos += count
 					} else if (type === 'improbable') {
-						currentToken.neg += token.length
+						currentToken.neg += count
 					}
 				} else if (action == 'unlearn') {
 					if (type === 'probable') {
-						currentToken.pos -= token.length
+						currentToken.pos -= count
 					} else if (type === 'improbable') {
-						currentToken.neg -= token.length
+						currentToken.neg -= count
 					}
 				}
 
@@ -278,6 +274,7 @@ export class B8 {
 					await this.storage.deleteToken(token, this.context)
 				}
 			} else {
+				const currentToken = { pos: 0, neg: 0 }
 				// We don't have the token.
 				// If we unlearn a text, we can't delete it as we don't
 				// have it anyway, so do something if we learn a text

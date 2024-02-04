@@ -1,7 +1,7 @@
 import * as sqlite3 from 'sqlite3'
 
 import { DB_VERSION, defaultPath, INTERNALS } from './const'
-import { B8CONFIG, DATASET, ROW, ROWS, TOKEN } from './types'
+import { B8CONFIG, DATASET, ROW, ROWS, TOKEN, TOKENS } from './types'
 
 export class SQLiteStorage {
 	private db: sqlite3.Database
@@ -228,10 +228,7 @@ export class SQLiteStorage {
 		})
 	}
 
-	getTokens(
-		tokens: string[],
-		context: string = 'b8_dataset'
-	): Promise<Record<string, TOKEN>> {
+	getTokens(tokens: string[], context: string = 'b8_dataset'): Promise<TOKENS> {
 		return new Promise<Record<string, TOKEN>>((resolve, reject) => {
 			const placeholders = tokens.map(() => '?').join(', ')
 			const query = `SELECT token, pos, neg

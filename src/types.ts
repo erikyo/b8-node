@@ -23,7 +23,7 @@ export type B8CONFIG = {
 	}
 }
 
-export interface DATASET {
+export type DATASET = {
 	positiveCount: number
 	negativeCount: number
 	totalLearned: number
@@ -31,16 +31,18 @@ export interface DATASET {
 }
 
 export interface TOKENDATA {
-	tokens: { [key: string]: TOKEN }
-	degenerates: Record<string, { [key: string]: TOKEN }>
+	tokens: TOKENS
+	degenerates: Record<string, TOKENS>
 }
 
 export interface TOKEN extends Database {
 	pos: number
 	neg: number
 }
+
+export type TOKEN_VALUE = { pos: number; neg: number }
 export interface TOKENS {
-	[x: string]: { pos: number; neg: number }
+	[key: string]: TOKEN_VALUE
 }
 
 export type LEXER_TOKEN = Record<string, number>
