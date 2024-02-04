@@ -67,9 +67,7 @@ export class B8 {
 		const tokenData = await this.storage.getTokens(tokens)
 
 		// Check if we have to degenerate some tokens
-		const missingTokens: string[] = Object.keys(tokens).filter(
-			(token) => !(token in tokenData)
-		)
+		const missingTokens: string[] = tokens.filter((token) => !(token in tokenData))
 
 		let degenerates_list = {}
 

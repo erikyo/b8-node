@@ -30,10 +30,6 @@ describe('Degenerator class', () => {
 
 	it('degenerates a list of words', () => {
 		const words = ['Example', 'Test']
-		const expected = {
-			Example: expect.arrayContaining(['example', 'EXAMPLE', 'Example']),
-			Test: expect.arrayContaining(['test', 'TEST', 'Test']),
-		}
 		degenerator.degenerate(words)
 		expect(degenerator.degenerates).toEqual({
 			Example: ['example', 'EXAMPLE'],

@@ -11,8 +11,12 @@ describe('B8', () => {
 		await b8.learn('Hello, world!', 'probable')
 		await b8.unlearn('world asd', 'probable')
 
-		const textToClassify = 'This is a sample text to classify.'
-		await b8.learn(textToClassify, 'probable')
+		const good = 'Hey world! This is a sample text to classify.'
+		const bad = 'remove this words from your text'
+		const textToClassify =
+			'This is a sample that contains words to classify eg. world'
+		await b8.learn(good, 'probable')
+		await b8.learn(bad, 'improbable')
 		const classificationResult = await b8.classify(textToClassify)
 		expect(classificationResult).toBeGreaterThanOrEqual(0.5)
 	})
