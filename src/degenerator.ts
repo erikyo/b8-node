@@ -14,9 +14,10 @@ export class Degenerator {
 		for (const word of words) {
 			this.degenerates[word] = this.degenerateWord(word)
 		}
+		return this.degenerates
 	}
 
-	flattenDegenerates(record: Record<string, string[]>): string[] {
+	flattenDegenerates(record: Record<string, string[]> = this.degenerates): string[] {
 		let result: string[] = []
 		Object.keys(record).forEach((key) => {
 			result = result.concat(record[key])
@@ -31,7 +32,7 @@ export class Degenerator {
 	 * @param {Array} list - the list to remove duplicates from
 	 * @return {Array} the list with duplicates removed
 	 */
-	deleteDuplicates(word: string, list: string[]) {
+	deleteDuplicates(word: string, list: string[]): string[] {
 		const listProcessed: string[] = []
 
 		list.forEach((altWord) => {
@@ -43,7 +44,7 @@ export class Degenerator {
 		return listProcessed
 	}
 
-	degenerateWord(word: string) {
+	degenerateWord(word: string): string[] {
 		if (this.degenerates[word as keyof typeof this.degenerates]) {
 			return this.degenerates[word as keyof typeof this.degenerates]
 		}
@@ -89,10 +90,6 @@ export class Degenerator {
 			}
 		})
 
-		const uniqueDegenerates = this.deleteDuplicates(word, degenerate)
-
-		this.degenerates[word] = uniqueDegenerates
-
-		return uniqueDegenerates
+		return this.deleteDuplicates(word, degenerate)
 	}
 }
