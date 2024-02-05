@@ -26,8 +26,6 @@ export type B8CONFIG = {
 export type DATASET = {
 	positiveCount: number
 	negativeCount: number
-	totalLearned: number
-	totalUnlearned: number
 }
 
 export interface TOKENDATA {

@@ -114,8 +114,6 @@ export class SQLiteStorage {
 			? {
 					positiveCount: internals.pos,
 					negativeCount: internals.neg,
-					totalLearned: 0,
-					totalUnlearned: 0,
 				}
 			: internals
 	}
@@ -252,6 +250,21 @@ export class SQLiteStorage {
 
 					// return an object if rows are found
 					resolve(Object.fromEntries(tokenMap))
+				}
+			})
+		})
+	}
+
+	getAllTokens(context: string = DEFAULT_DATASET): Promise<ROW[]> {
+		return new Promise<ROW[]>((resolve, reject) => {
+			const query = `SELECT * FROM ` + context
+
+			this.db.all(query, (err: Error | null, rows: ROW[]) => {
+				if (err) {
+					console.error(err)
+					reject(err)
+				} else {
+					resolve(rows)
 				}
 			})
 		})

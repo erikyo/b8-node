@@ -39,7 +39,7 @@ export class B8 {
 	private lexer: Lexer
 	private storage: SQLiteStorage
 	private context: string = DEFAULT_DATASET
-	private internals: DATASET
+	internals: DATASET
 	private tokenData: TOKENDATA | null = null
 
 	constructor(config?: B8CONFIG) {
@@ -58,8 +58,6 @@ export class B8 {
 		this.internals = {
 			positiveCount: 0,
 			negativeCount: 0,
-			totalLearned: 0,
-			totalUnlearned: 0,
 		}
 	}
 
@@ -122,7 +120,7 @@ export class B8 {
 
 		this.tokenData = await this.get(Object.keys(tokens))
 
-		const relevantScore = this.config.use_relevant || 0.95
+		const relevantScore = this.config.use_relevant || 15
 
 		const stats: {
 			wordCount: Record<string, number>
@@ -134,21 +132,21 @@ export class B8 {
 			importance: {},
 		}
 
-		// sort stats.importance by value
-		stats.importance = Object.fromEntries(
-			Object.entries(stats.importance).sort((a, b) => b[1] - a[1])
-		)
-
 		// Calculate the affinity of each token
 		Object.entries(tokens).forEach(([token, count]) => {
 			stats.wordCount[token] = count
 			// Although we only call this function only here ... let's do the calculation stuff in a
 			// function to make this a bit less confusing ;-)
-			stats.rating[token] = this.tokenData
+			stats.rating[token] = this.tokenData?.tokens[token]
 				? this.getProbability(token, this.tokenData)
 				: 0.5
 			stats.importance[token] = Math.abs(0.5 - stats.rating[token])
 		})
+
+		// sort stats.importance by value
+		stats.importance = Object.fromEntries(
+			Object.entries(stats.importance).sort((a, b) => b[1] - a[1])
+		)
 
 		const relevantTokens = []
 		for (let i = 0; i < relevantScore; i++) {
@@ -163,29 +161,17 @@ export class B8 {
 						relevantTokens.push(stats.rating[token])
 					}
 				}
-			} else {
-				// We have fewer words than we want to use, so we already use what we have and can break here
-				break
 			}
-
-			// Move to the next key in the importance object
-			delete stats.importance[token]
 		}
 
 		// We set both haminess and spaminess to 1 for the first multiplying
-		let haminess = 1
-		let spaminess = 1
+		let positive = 1
+		let negative = 1
 
 		// Consider all relevant ratings
 		for (const value of relevantTokens) {
-			haminess *= 1.0 - value
-			spaminess *= value
-		}
-
-		// If no token was good for calculation, we really don't know how to rate this text,
-		// so we can return 0.5 without further calculations.
-		if (haminess === 1 && spaminess === 1) {
-			return 0.5
+			positive *= 1.0 - value
+			negative *= value
 		}
 
 		// Calculate the combined rating
@@ -194,11 +180,11 @@ export class B8 {
 		const n = relevantTokens.length
 
 		// The actual haminess and spaminess
-		haminess = 1 - Math.pow(haminess, 1 / n)
-		spaminess = 1 - Math.pow(spaminess, 1 / n)
+		positive = Math.pow(positive, 1 / n)
+		negative = Math.pow(negative, 1 / n)
 
 		// Calculate the combined indicator
-		let probability = (haminess - spaminess) / (haminess + spaminess)
+		let probability = (positive - negative) / (positive + negative)
 
 		// We want a value between 0 and 1, not between -1 and +1, so ...
 		probability = (1 + probability) / 2
@@ -217,7 +203,7 @@ export class B8 {
 	 */
 	private getProbability(word: string, tokenData: TOKENDATA): number {
 		// Let's see what we have!
-		if (tokenData.degenerates[word]) {
+		if (tokenData.tokens[word]) {
 			// The token is in the database, so we can use its data as-is and calculate the spaminess of this token directly
 			return this.calculateAffinity(tokenData.tokens[word])
 		}
@@ -257,17 +243,34 @@ export class B8 {
 	 *
 	 * @return {number} the spamminess of the token
 	 */
-	private calculateAffinity(token: TOKEN_VALUE) {
+	calculateAffinity(token: TOKEN_VALUE) {
 		//const totalTokens = negativeCount + positiveCount
-		const totalCategories =
-			this.internals.negativeCount + this.internals.positiveCount
+		// Calculate the basic probability as proposed by Mr. Graham
 
-		const negProbability =
-			(token.neg + 1) / (this.internals.negativeCount + totalCategories)
-		const posProbability =
-			(token.pos + 1) / (this.internals.positiveCount + totalCategories)
+		// But: consider the number of ham and spam texts saved instead of the number of entries
+		// where the token appeared to calculate a relative spaminess because we count tokens
+		// appearing multiple times not just once but as often as they appear in the learned texts.
 
-		return negProbability / (negProbability + posProbability)
+		let relPos = token.pos
+		let relNeg = token.neg
+
+		if (this.internals.positiveCount > 0) {
+			relPos = token.pos / this.internals.positiveCount
+		}
+
+		if (this.internals.negativeCount > 0) {
+			relNeg = token.neg / this.internals.negativeCount
+		}
+
+		const rating = relNeg / (relPos + relNeg)
+
+		const all = token.pos + token.neg
+
+		const result =
+			(this.config.rob_s * this.config.rob_x + all * rating) /
+			(this.config.rob_s + all)
+
+		return result
 	}
 
 	private async processText(
@@ -307,8 +310,16 @@ export class B8 {
 					}
 				}
 
-				/** Update the stored dataset */
-				if (currentToken.pos != 0 || currentToken.neg !== 0) {
+				// We don't want to have negative values
+				if (currentToken.pos < 0) {
+					currentToken.pos = 0
+				}
+				if (currentToken.neg < 0) {
+					currentToken.neg = 0
+				}
+
+				// Now let's see if we have to update or delete the token
+				if (currentToken.pos !== 0 || currentToken.neg !== 0) {
 					await this.storage.updateToken(
 						token,
 						[Math.abs(currentToken.pos), Math.abs(currentToken.neg)],
@@ -318,23 +329,14 @@ export class B8 {
 					await this.storage.deleteToken(token, this.context)
 				}
 			} else {
-				const currentToken = { pos: 0, neg: 0 }
 				// We don't have the token.
 				// If we unlearn a text, we can't delete it as we don't
 				// have it anyway, so do something if we learn a text
 				if (action === 'learn') {
 					if (type === 'probable') {
-						await this.storage.addToken(
-							token,
-							[currentToken.pos, 0],
-							this.context
-						)
+						await this.storage.addToken(token, [count, 0], this.context)
 					} else if (type === 'improbable') {
-						await this.storage.addToken(
-							token,
-							[0, currentToken.neg],
-							this.context
-						)
+						await this.storage.addToken(token, [0, count], this.context)
 					}
 				}
 			}
@@ -417,9 +419,11 @@ export class B8 {
 			this.internals = {
 				positiveCount: 0,
 				negativeCount: 0,
-				totalLearned: 0,
-				totalUnlearned: 0,
 			}
 		}
+	}
+
+	async dumpContext(context: string = DEFAULT_DATASET) {
+		return await this.storage.getAllTokens(context)
 	}
 }

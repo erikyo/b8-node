@@ -9,10 +9,10 @@ export const DB_VERSION_KEY = 'b8*dbversion'
 export const INTERNALS_KEY = 'b8*texts'
 
 export const configDefaults: B8CONFIG = {
-	min_dev: 0.01,
-	rob_s: 0.5,
+	min_dev: 0.2,
+	rob_s: 0.3,
 	rob_x: 0.5,
-	use_relevant: 0.95,
+	use_relevant: 15,
 	lexer: {
 		min_size: 3,
 		max_size: 30,
