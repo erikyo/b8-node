@@ -237,17 +237,17 @@ export class B8 {
 	}
 
 	/**
-	 * Calculates the spamminess of a token based on spam and ham counts.
+	 * Calculates the affinity of a token based on positive and negative counts
 	 *
 	 * @param token - The token to calculate
 	 *
-	 * @return {number} the spamminess of the token
+	 * @return {number} the affinity of the token
 	 */
 	calculateAffinity(token: TOKEN_VALUE) {
-		//const totalTokens = negativeCount + positiveCount
+		// const totalTokens = negativeCount + positiveCount
 		// Calculate the basic probability as proposed by Mr. Graham
 
-		// But: consider the number of ham and spam texts saved instead of the number of entries
+		// But: consider the number of positive and negative texts saved instead of the number of entries
 		// where the token appeared to calculate a relative spaminess because we count tokens
 		// appearing multiple times not just once but as often as they appear in the learned texts.
 

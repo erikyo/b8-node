@@ -128,10 +128,10 @@ export class SQLiteStorage {
 	}
 
 	/**
-	 * Adds a token to the database with its count for ham and spam.
+	 * Adds a token to the database with its count
 	 *
 	 * @param {string[]} token - the token to be added
-	 * @param {{[x: string]: any}} count - object containing count for ham and spam
+	 * @param {{[x: string]: any}} count - object containing count for positive and negative
 	 * @param context - the context to add the token to. default to b8_database
 	 */
 	addToken(

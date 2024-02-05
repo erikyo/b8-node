@@ -57,13 +57,13 @@ describe('calculateAffinity', () => {
 		// Set up internal counts for testing
 		instance.internals = {
 			negativeCount: 20,
-			positiveCount: 30,
+			positiveCount: 40,
 		}
 
 		const affinity = instance.calculateAffinity(mockToken)
 
 		// Call the method and expect the result to match the expected value
-		expect(affinity).toBeCloseTo(0.429, 2) // Using toBeCloseTo for comparing floating point numbers
+		expect(affinity).toBeCloseTo(0.5, 2) // Using toBeCloseTo for comparing floating point numbers
 	})
 
 	it('should handle zero counts correctly', () => {
