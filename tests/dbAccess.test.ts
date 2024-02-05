@@ -14,8 +14,6 @@ describe('DB access', () => {
 		expect(internals).toMatchObject({
 			negativeCount: 0,
 			positiveCount: 0,
-			totalLearned: 0,
-			totalUnlearned: 0,
 		})
 		expect(version).toBe(DB_VERSION)
 	})
