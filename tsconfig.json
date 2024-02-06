@@ -1,12 +1,9 @@
 {
 	"compilerOptions": {
-		"target": "ES2021",
+		"module": "NodeNext",
+		"target": "ESNext",
 		"lib": [ "ES2021" ],
-		"moduleResolution": "Node",
-		"noImplicitAny": true,
-		"removeComments": true,
-		"preserveConstEnums": true,
-		"sourceMap": true,
+		"moduleResolution": "NodeNext",
 		"strict": true,
 		"declaration": true,
 		"downlevelIteration": true,
@@ -19,12 +16,9 @@
 		"pretty": false,
 		// types
 		"typeRoots": [
-			"src/types.d.ts",
 			"node_modules/@types",
 			"@types"
 		]
 	},
-	"include": [
-		"./src/**/*"
-	]
+	"include": [ "src" ]
 }

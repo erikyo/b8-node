@@ -1,4 +1,4 @@
-import { B8CONFIG } from './types'
+import { B8CONFIG } from './types.js'
 
 export const DB_VERSION: number = 1
 export const LEXER_TEXT_NOT_STRING = 'LEXER_TEXT_NOT_STRING'
