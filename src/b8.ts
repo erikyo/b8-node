@@ -1,38 +1,10 @@
-import { Degenerator } from './degenerator'
-import { Lexer } from './lexer'
-import { SQLiteStorage } from './SQLiteStorage'
-import { configDefaults, DEFAULT_DATASET, INTERNALS_KEY } from './const'
-import { B8CONFIG, DATASET, LEXER_TOKEN, TOKEN_VALUE, TOKENDATA } from './types'
+import { Degenerator } from './degenerator.js'
+import { Lexer } from './lexer.js'
+import { SQLiteStorage } from './SQLiteStorage.js'
+import { configDefaults, DEFAULT_DATASET, INTERNALS_KEY } from './const.js'
+import { B8CONFIG, DATASET, LEXER_TOKEN, TOKEN_VALUE, TOKENDATA } from './types.js'
 
-function validateConfig(config?: Partial<B8CONFIG>) {
-	if (!config) {
-		return configDefaults
-	}
-	const validConfig: B8CONFIG = configDefaults
-	// Validate config data
-	Object.keys(config).forEach((name) => {
-		switch (name) {
-			case 'min_dev':
-			case 'rob_s':
-			case 'rob_x':
-			case 'use_relevant':
-				validConfig[name] = Number(config[name])
-				break
-			case 'lexer':
-			case 'degenerator':
-				validConfig[name] = config[name]
-				break
-			case 'storage':
-				validConfig['storage'] = config['storage']
-				break
-			default:
-				throw new Error(`Unknown configuration key: "${name}"`)
-		}
-	})
-	return validConfig
-}
-
-export class B8 {
+class B8 {
 	config: B8CONFIG
 
 	private degenerator: Degenerator
@@ -43,7 +15,7 @@ export class B8 {
 	private tokenData: TOKENDATA | null = null
 
 	constructor(config?: B8CONFIG) {
-		this.config = validateConfig(config)
+		this.config = this.validateConfig(config)
 
 		// The degenerator class
 		this.degenerator = new Degenerator(this.config.degenerator)
@@ -59,6 +31,34 @@ export class B8 {
 			positiveCount: 0,
 			negativeCount: 0,
 		}
+	}
+
+	private validateConfig(config?: Partial<B8CONFIG>) {
+		if (!config) {
+			return configDefaults
+		}
+		const validConfig: B8CONFIG = configDefaults
+		// Validate config data
+		Object.keys(config).forEach((name) => {
+			switch (name) {
+				case 'min_dev':
+				case 'rob_s':
+				case 'rob_x':
+				case 'use_relevant':
+					validConfig[name] = Number(config[name])
+					break
+				case 'lexer':
+				case 'degenerator':
+					validConfig[name] = config[name]
+					break
+				case 'storage':
+					validConfig['storage'] = config['storage']
+					break
+				default:
+					throw new Error(`Unknown configuration key: "${name}"`)
+			}
+		})
+		return validConfig
 	}
 
 	private async get(tokens: string[]): Promise<TOKENDATA> {
@@ -427,3 +427,5 @@ export class B8 {
 		return await this.storage.getAllTokens(context)
 	}
 }
+
+export default B8
