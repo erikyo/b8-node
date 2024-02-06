@@ -1,4 +1,4 @@
-import { B8CONFIG } from './types'
+import { B8CONFIG } from './types.js'
 
 export class Degenerator {
 	private config: B8CONFIG['degenerator']
