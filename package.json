@@ -4,7 +4,6 @@
 	"description": "",
 	"main": "index.js",
 	"bin": "lib/index.js",
-	"type": "module",
 	"scripts": {
 		"build": "tsc --build",
 		"watch": "tsc --watch",
