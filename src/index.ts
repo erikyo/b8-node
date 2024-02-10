@@ -8,7 +8,7 @@ import fs from 'node:fs/promises'
 import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
 import path from 'node:path'
-import { classifyImage } from './imageClassification'
+import { classifyImage, learnImage } from './imageClassification'
 import axios from 'axios'
 import { B8CONFIG } from './types'
 
@@ -55,6 +55,42 @@ export function b8Cli() {
 					for (const file of files) {
 						const text = await readFile(file)
 						await b8.learn(text, affinity, context)
+					}
+
+					console.log('Learning completed successfully.')
+				} catch (error) {
+					if (error instanceof Error) {
+						console.error('Error during learning:', error.message)
+					}
+				}
+			},
+		})
+
+		.command({
+			command: 'learnImage',
+			describe: 'Learn from image files',
+			builder: (yargs) => {
+				return yargs
+					.option('pattern', {
+						alias: 'p',
+						describe: 'the path of the image files to learn from',
+						demandOption: true,
+					})
+					.option('description', {
+						alias: 'd',
+						describe: 'the description of the image files to learn from',
+						demandOption: true,
+					})
+			},
+			handler: async (argv) => {
+				try {
+					const pattern = argv.pattern as string
+					const description = argv.description as string
+
+					const files = getFiles(pattern)
+
+					for (const file of files) {
+						await learnImage(file, description)
 					}
 
 					console.log('Learning completed successfully.')
