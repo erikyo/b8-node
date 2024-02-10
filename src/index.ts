@@ -8,7 +8,8 @@ import fs from 'node:fs/promises'
 import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
 import path from 'node:path'
-import { classifyImage, learnImage } from './imageClassification'
+import { classifyImage } from './imageClassification'
+import { learnImage } from './imageTraining'
 import axios from 'axios'
 import { B8CONFIG } from './types'
 
@@ -84,14 +85,12 @@ export function b8Cli() {
 			},
 			handler: async (argv) => {
 				try {
-					const pattern = argv.pattern as string
-					const description = argv.description as string
+					const pattern = (argv.pattern as string).split(',')
+					const description = (argv.description as string).split(',')
+					const testFiles = [] as string[]
+					const testFilesLabels = [] as string[]
 
-					const files = getFiles(pattern)
-
-					for (const file of files) {
-						await learnImage(file, description)
-					}
+					await learnImage(pattern, description, testFiles, testFilesLabels)
 
 					console.log('Learning completed successfully.')
 				} catch (error) {

@@ -17,18 +17,10 @@
 
 import tf from '@tensorflow/tfjs'
 import assert from 'assert'
-import fs from 'fs'
-import https from 'https'
-import zlib from 'zlib'
 import { PathLike } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 
 // MNIST data constants:
-const BASE_URL = 'https://storage.googleapis.com/cvdf-datasets/mnist/'
-const TRAIN_IMAGES_FILE = 'train-images-idx3-ubyte'
-const TRAIN_LABELS_FILE = 'train-labels-idx1-ubyte'
-const TEST_IMAGES_FILE = 't10k-images-idx3-ubyte'
-const TEST_LABELS_FILE = 't10k-labels-idx1-ubyte'
 const IMAGE_HEADER_MAGIC_NUM = 2051
 const IMAGE_HEADER_BYTES = 16
 const IMAGE_HEIGHT = 28
@@ -39,27 +31,27 @@ const LABEL_HEADER_BYTES = 8
 const LABEL_RECORD_BYTE = 1
 const LABEL_FLAT_SIZE = 10
 
+interface DataSetPaths {
+	train_images: string[]
+	train_labels: string[]
+	test_images: string[]
+	test_labels: string[]
+}
+
 // Downloads a test file only once and returns the buffer for the file.
-async function fetchOnceAndSaveToDiskWithBuffer(filename: PathLike) {
-	return new Promise((resolve) => {
-		const url = `${BASE_URL}${filename}.gz`
-		if (fs.existsSync(filename)) {
-			resolve(readFile(filename))
-			return
-		}
-		const file = fs.createWriteStream(filename)
-		console.log(`  * Downloading from: ${url}`)
-		https.get(url, (response) => {
-			const unzip = zlib.createGunzip()
-			response.pipe(unzip).pipe(file)
-			unzip.on('end', () => {
-				resolve(readFile(filename))
-			})
+async function loadFiles(filenames: PathLike[]) {
+	const files = []
+	for (const file of filenames) {
+		files.push(readFile(file))
+	}
+	return Promise.all(files).then((buffers) => {
+		return buffers.map((buffer) => {
+			return buffer
 		})
 	})
 }
 
-function loadHeaderValues(buffer: Buffer, headerLength: number) {
+function loadHeaderValue(buffer: Buffer, headerLength: number) {
 	const headerValues = []
 	for (let i = 0; i < headerLength / 4; i++) {
 		// Header data is stored in-order (aka big-endian)
@@ -68,54 +60,59 @@ function loadHeaderValues(buffer: Buffer, headerLength: number) {
 	return headerValues
 }
 
-async function loadImages(filename: PathLike) {
-	const buffer = (await fetchOnceAndSaveToDiskWithBuffer(filename)) as Buffer
+async function loadImages(filename: PathLike[]) {
+	const buffer = (await loadFiles(filename)) as Buffer[]
 
 	const headerBytes = IMAGE_HEADER_BYTES
 	const recordBytes = IMAGE_HEIGHT * IMAGE_WIDTH
 
-	const headerValues = loadHeaderValues(buffer, headerBytes)
+	const headerValues = buffer.map((buf) => loadHeaderValue(buf, headerBytes))
 	assert.equal(headerValues[0], IMAGE_HEADER_MAGIC_NUM)
 	assert.equal(headerValues[2], IMAGE_HEIGHT)
 	assert.equal(headerValues[3], IMAGE_WIDTH)
 
-	const images = []
+	const images: Float32Array[] = []
 	let index = headerBytes
-	while (index < buffer.byteLength) {
-		const array = new Float32Array(recordBytes)
-		for (let i = 0; i < recordBytes; i++) {
-			// Normalize the pixel values into the 0-1 interval, from
-			// the original 0-255 interval.
-			array[i] = buffer.readUInt8(index++) / 255
+	buffer.forEach((buf) => {
+		while (index < buf.byteLength) {
+			const array = new Float32Array(recordBytes)
+			for (let i = 0; i < recordBytes; i++) {
+				// Normalize the pixel values into the 0-1 interval, from
+				// the original 0-255 interval.
+				array[i] = buf.readUInt8(index++) / 255
+			}
+			images.push(array)
 		}
-		images.push(array)
-	}
+	})
 
 	assert.equal(images.length, headerValues[1])
 	return images
 }
 
-async function loadLabels(filename: PathLike) {
-	const buffer = (await fetchOnceAndSaveToDiskWithBuffer(filename)) as Buffer
-
+async function loadLabels(labels: string[]) {
 	const headerBytes = LABEL_HEADER_BYTES
 	const recordBytes = LABEL_RECORD_BYTE
 
-	const headerValues = loadHeaderValues(buffer, headerBytes)
+	// convert the strings to a buffer
+	const buffer = labels.map((label) => Buffer.from(label, 'utf8')) as Buffer[]
+
+	const headerValues = buffer.map((buf) => loadHeaderValue(buf, headerBytes))
 	assert.equal(headerValues[0], LABEL_HEADER_MAGIC_NUM)
 
-	const labels = []
+	const bufferedLabels: Int32Array[] = []
 	let index = headerBytes
-	while (index < buffer.byteLength) {
-		const array = new Int32Array(recordBytes)
-		for (let i = 0; i < recordBytes; i++) {
-			array[i] = buffer.readUInt8(index++)
+	for (const buf of buffer) {
+		while (index < buf.byteLength) {
+			const array = new Int32Array(recordBytes)
+			for (let i = 0; i < recordBytes; i++) {
+				array[i] = buf.readUInt8(index++)
+			}
+			bufferedLabels.push(array)
 		}
-		labels.push(array)
 	}
 
-	assert.equal(labels.length, headerValues[1])
-	return labels
+	assert.equal(bufferedLabels.length, headerValues[1])
+	return bufferedLabels
 }
 
 /** Helper class to handle loading training and test data. */
@@ -124,10 +121,10 @@ export default class MnistDataset {
 	trainBatchIndex: number
 	testSize: number
 	trainSize: number
-	dataset: null | Array<Array<Float32Array | Int32Array>>
+	dataset: Record<string, Int32Array[] | Float32Array[]> | undefined
 
 	constructor() {
-		this.dataset = null
+		this.dataset = undefined
 		this.trainSize = 0
 		this.testSize = 0
 		this.trainBatchIndex = 0
@@ -135,15 +132,22 @@ export default class MnistDataset {
 	}
 
 	/** Loads training and test data. */
-	async loadData() {
-		this.dataset = await Promise.all([
-			loadImages(TRAIN_IMAGES_FILE),
-			loadLabels(TRAIN_LABELS_FILE),
-			loadImages(TEST_IMAGES_FILE),
-			loadLabels(TEST_LABELS_FILE),
+	async loadData(datasetPath: DataSetPaths) {
+		const newDataset = await Promise.all([
+			loadImages(datasetPath.train_images),
+			loadLabels(datasetPath.train_labels),
+			loadImages(datasetPath.test_images),
+			loadLabels(datasetPath.test_labels),
 		])
-		this.trainSize = this.dataset[0].length
-		this.testSize = this.dataset[2].length
+
+		this.dataset = {
+			train_images: newDataset[0],
+			train_labels: newDataset[1],
+			test_images: newDataset[2],
+			test_labels: newDataset[3],
+		}
+		this.trainSize = this.dataset.train_images.length
+		this.testSize = this.dataset.test_images.length
 	}
 
 	getTrainData() {
@@ -163,7 +167,7 @@ export default class MnistDataset {
 			imagesIndex = 2
 			labelsIndex = 3
 		}
-		if (this.dataset === null) {
+		if (this.dataset === undefined) {
 			throw new Error('Data not loaded yet')
 		}
 		const size = this.dataset[imagesIndex].length
