@@ -1,8 +1,8 @@
-import { Degenerator } from './degenerator.js'
-import { Lexer } from './lexer.js'
-import { SQLiteStorage } from './SQLiteStorage.js'
-import { configDefaults, DEFAULT_DATASET, INTERNALS_KEY } from './const.js'
-import { B8CONFIG, DATASET, LEXER_TOKEN, TOKEN_VALUE, TOKENDATA } from './types.js'
+import { Degenerator } from './degenerator'
+import { Lexer } from './lexer'
+import { SQLiteStorage } from './SQLiteStorage'
+import { configDefaults, DEFAULT_DATASET, INTERNALS_KEY } from './const'
+import { B8CONFIG, DATASET, LEXER_TOKEN, TOKEN_VALUE, TOKENDATA } from './types'
 
 class B8 {
 	config: B8CONFIG

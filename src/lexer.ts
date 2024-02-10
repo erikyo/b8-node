@@ -1,6 +1,6 @@
 import { convert } from 'html-to-text'
-import { LEXER_TEXT_EMPTY } from './const.js'
-import { B8CONFIG, LEXER_TOKEN } from './types.js'
+import { LEXER_TEXT_EMPTY } from './const'
+import { B8CONFIG, LEXER_TOKEN } from './types'
 
 export class Lexer {
 	tokens: LEXER_TOKEN | null = {}

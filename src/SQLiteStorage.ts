@@ -6,7 +6,7 @@ import {
 	DEFAULT_DATASET,
 	defaultPath,
 	INTERNALS_KEY,
-} from './const.js'
+} from './const'
 import { B8CONFIG, DATASET, ROW, ROWS, TOKENS } from './types.js'
 
 export class SQLiteStorage {

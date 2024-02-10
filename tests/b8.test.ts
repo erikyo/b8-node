@@ -1,5 +1,5 @@
 import { describe, it } from '@jest/globals'
-import { B8 } from '../src'
+import B8 from '../src/b8'
 import { TOKEN_VALUE } from '../src/types'
 
 // Mock any necessary constants and methods that are used within processText

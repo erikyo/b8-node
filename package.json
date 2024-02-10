@@ -10,10 +10,16 @@
 		"clean": "tsc --build --clean",
 		"lint": "eslint ./src ./tests --fix",
 		"test": "jest",
-		"run": "node lib/index.js"
+		"run": "node lib/index.js",
+		"run-learn": "node lib/index.js learn -p tests/fixtures/ex* -a \"probable\""
 	},
 	"devDependencies": {
 		"@jest/globals": "^29.7.0",
+		"@tensorflow/tfjs-backend-cpu": "^4.17.0",
+		"@tensorflow/tfjs-backend-webgl": "^4.17.0",
+		"@tensorflow/tfjs-converter": "^4.17.0",
+		"@tensorflow/tfjs-core": "^4.17.0",
+		"@tensorflow-models/mobilenet": "^2.1.1",
 		"@types/html-to-text": "^9.0.4",
 		"@types/jest": "^29.5.11",
 		"@types/node": "^20.10.4",
@@ -34,8 +40,11 @@
 		"typescript": "^5.3.3"
 	},
 	"dependencies": {
+		"@tensorflow/tfjs-node": "^4.17.0",
+		"axios": "^1.6.7",
 		"glob": "^10.3.10",
 		"html-to-text": "^9.0.5",
+		"pdf-parse": "^1.1.1",
 		"sqlite3": "^5.1.7",
 		"yargs": "^17.7.2"
 	}
