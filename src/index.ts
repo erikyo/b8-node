@@ -7,8 +7,12 @@ import { globSync } from 'glob'
 import fs from 'node:fs/promises'
 import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
+import path from 'node:path'
+import { classifyImage } from './imageClassification'
+import axios from 'axios'
+import { B8CONFIG } from './types'
 
-const b8 = new B8()
+const b8 = new B8({ storage: { dbPath: 'b8.sqlite' } } as B8CONFIG)
 
 export function b8Cli() {
 	return yargs(hideBin(process.argv))
@@ -22,20 +26,26 @@ export function b8Cli() {
 						describe: 'Glob pattern for text files to learn from',
 						demandOption: true,
 					})
-					.option('category', {
-						alias: 'c',
-						describe: 'Category for learning (spam or ham)',
+					.option('affinity', {
+						alias: 'a',
+						describe: 'affinity for learning (probable or improbable)',
 						demandOption: true,
+					})
+					.option('context', {
+						alias: 'c',
+						describe: 'context to use',
+						default: undefined,
 					})
 			},
 			handler: async (argv) => {
 				try {
 					const pattern = argv.pattern as string
-					const category = argv.category as string
+					const affinity = argv.affinity as string
+					const context = argv.context as string | undefined
 
-					if (category !== 'probable' && category !== 'improbable') {
+					if (affinity !== 'probable' && affinity !== 'improbable') {
 						console.error(
-							'Invalid category. Must be "probable" or "improbable".'
+							'Invalid affinity. Must be "probable" or "improbable".'
 						)
 						process.exit(1)
 					}
@@ -44,7 +54,7 @@ export function b8Cli() {
 
 					for (const file of files) {
 						const text = await readFile(file)
-						await b8.learn(text, category)
+						await b8.learn(text, affinity, context)
 					}
 
 					console.log('Learning completed successfully.')
@@ -56,25 +66,91 @@ export function b8Cli() {
 			},
 		})
 		.command({
-			command: 'classify',
-			describe: 'Classify text files',
+			command: 'classifyImage',
+			describe: 'Classify image files',
 			builder: (yargs) => {
-				return yargs.option('pattern', {
-					alias: 'p',
-					describe: 'Glob pattern for text files to classify',
-					demandOption: true,
-				})
+				return yargs
+					.option('image', {
+						alias: 'i',
+						describe: 'the path to the image file to classify',
+						demandOption: true,
+					})
+					.option('context', {
+						alias: 'c',
+						describe: 'context to use',
+						default: undefined,
+					})
 			},
 			handler: async (argv) => {
 				try {
-					const pattern = argv.pattern as string
+					const image = argv.pattern as string
+					const context = argv.context as string | undefined
+					let content = ''
+					if (
+						['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff'].includes(
+							path.extname(image)
+						)
+					) {
+						const result = await classifyImage(image)
+						for (const res of result) {
+							content += res.className + ' '
+						}
+					} else {
+						content = await readFile(image)
+					}
+					const result = await b8.classify(content, context)
+					console.log(
+						`Classification result for ${image}:`,
+						result,
+						'content:',
+						content
+					)
+				} catch (error) {
+					if (error instanceof Error) {
+						console.error('Error during classification:', error.message)
+					}
+				}
+			},
+		})
+		.command({
+			command: 'classifyUrl',
+			describe: 'Classify internet pages',
+			builder: (yargs) => {
+				return yargs
+					.option('url', {
+						alias: 'u',
+						describe: 'url to classify',
+						demandOption: true,
+					})
+					.option('context', {
+						alias: 'c',
+						describe: 'context to use',
+						default: undefined,
+					})
+			},
+			handler: async (argv) => {
+				try {
+					const url = argv.pattern as string
+					const context = argv.context as string | undefined
 
-					const files = getFiles(pattern)
+					const content: string = await axios.get(url).then((response) => {
+						return new Promise((resolve, reject) => {
+							if (response.status === 200) {
+								resolve(response.data)
+							} else {
+								reject(response.data)
+							}
+						})
+					})
 
-					for (const file of files) {
-						const text = await readFile(file)
-						const result = await b8.classify(text)
-						console.log(`Classification result for ${file}:`, result)
+					if (content) {
+						const result = await b8.classify(content, context)
+						console.log(
+							`Classification result for ${url}:`,
+							result,
+							'content:',
+							content
+						)
 					}
 				} catch (error) {
 					if (error instanceof Error) {
