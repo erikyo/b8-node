@@ -65,6 +65,7 @@ export function b8Cli() {
 				}
 			},
 		})
+
 		.command({
 			command: 'classifyImage',
 			describe: 'Classify image files',
@@ -83,30 +84,40 @@ export function b8Cli() {
 			},
 			handler: async (argv) => {
 				try {
-					const image = argv.pattern as string
+					const image = argv.image as string
 					const context = argv.context as string | undefined
+
+					console.log(
+						'Classifying image:',
+						image,
+						'ext:',
+						path.extname(image).slice(1)
+					)
 					let content = ''
 					if (
 						['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff'].includes(
-							path.extname(image)
+							path.extname(image).slice(1)
 						)
 					) {
 						const result = await classifyImage(image)
 						for (const res of result) {
 							content += res.className + ' '
 						}
+						console.log('Content:', content)
+						const classification = await b8.classify(content, context)
+						console.log(
+							`Classification result for ${image}:`,
+							classification,
+							'\ncontext:',
+							context,
+							'with content:',
+							content
+						)
 					} else {
 						console.error(
 							'Invalid image format. Must be one of: jpg, jpeg, png, gif, webp, bmp, tiff.'
 						)
 					}
-					const result = await b8.classify(content, context)
-					console.log(
-						`Classification result for ${image}:`,
-						result,
-						'content:',
-						content
-					)
 				} catch (error) {
 					if (error instanceof Error) {
 						console.error('Error during classification:', error.message)

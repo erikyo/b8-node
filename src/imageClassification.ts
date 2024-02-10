@@ -12,10 +12,10 @@ export async function classifyImage(
 	// Load the model.
 	const model = await mobilenet.load({ version, alpha })
 
-	const tfNode = await import('@tensorflow/tfjs-node')
+	const tf = await import('@tensorflow/tfjs-node')
 
 	const imgBuffer = fs.readFileSync(imagePath)
-	const tensor = tfNode.node.decodeImage(imgBuffer, 3)
+	const tensor = tf.node.decodeImage(imgBuffer, 3)
 
 	// Make a prediction
 	return await model.classify(tensor)
