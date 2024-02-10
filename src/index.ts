@@ -96,7 +96,9 @@ export function b8Cli() {
 							content += res.className + ' '
 						}
 					} else {
-						content = await readFile(image)
+						console.error(
+							'Invalid image format. Must be one of: jpg, jpeg, png, gif, webp, bmp, tiff.'
+						)
 					}
 					const result = await b8.classify(content, context)
 					console.log(
@@ -152,6 +154,30 @@ export function b8Cli() {
 							content
 						)
 					}
+				} catch (error) {
+					if (error instanceof Error) {
+						console.error('Error during learning:', error.message)
+					}
+				}
+			},
+		})
+
+		.command({
+			command: 'dump',
+			describe: 'Dump learned data from a context',
+			builder: (yargs) => {
+				return yargs.option('context', {
+					alias: 'c',
+					describe: 'context to dump',
+					default: undefined,
+				})
+			},
+			handler: async (argv) => {
+				try {
+					const context = argv.context as string | undefined
+
+					const result = await b8.dumpContext(context)
+					console.log(`Dump result for ${context}:`, result)
 				} catch (error) {
 					if (error instanceof Error) {
 						console.error('Error during learning:', error.message)
